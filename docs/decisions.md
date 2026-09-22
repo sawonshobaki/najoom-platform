@@ -135,3 +135,48 @@ Do not add:
 Any change to these decisions must be explicitly approved before implementation.
 
 Agents must not silently expand the scope of the project.
+
+## Visual Identity — Phase 1
+
+The visual foundation for Najoom Platform is approved for V1.
+
+Fixed visual decisions:
+
+- Arabic-first RTL interface.
+- No dark mode in V1.
+- Responsive design for mobile, tablet, desktop, and classroom displays.
+- Najoom uses an original science-and-exploration visual identity.
+- The approved Najoom mascot is the official character reference for V1.
+- Jordanian identity may appear through carefully selected visual elements.
+- Primary visual direction uses navy, blue, teal, sky, and gold.
+- Animation should remain purposeful and moderate.
+- Learning interactions should use subtle animation.
+- Achievement moments may use more expressive animation.
+- No sound effects in V1.
+- Avoid generic AI-generated dashboard aesthetics.
+- Avoid excessive gradients, decorative clutter, and unnecessary emoji.
+- Accessibility, readable contrast, keyboard focus, and touch-friendly controls are required.
+
+The approved primary visual reference is stored at:
+
+`public/brand/najoom-brand-main.png`
+
+The full poster image is a visual reference and welcome-page asset. It must not be reused as the logo throughout the entire application.
+
+Future brand assets should derive from the approved identity and may include:
+
+- Compact Najoom logo/mark.
+- Standalone Najoom mascot.
+- Header-compatible brand asset.
+- Achievement and learning-state mascot variants.
+
+These derived assets must preserve the approved character and visual identity rather than redesigning the mascot from scratch.
+
+Phase 1 visual foundation was verified with:
+
+- ESLint
+- TypeScript type checking
+- Vitest
+- Next.js production build
+- Desktop visual inspection
+- Mobile responsive inspection at 390 × 844
