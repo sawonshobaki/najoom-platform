@@ -37,6 +37,7 @@
   --color-surface: var(--surface);
   --color-surface-soft: var(--surface-soft);
   --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
 
   --color-najoom-navy: var(--najoom-navy);
   --color-najoom-blue: var(--najoom-blue);
@@ -63,7 +64,7 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Tahoma, sans-serif;
+  font-family: Tahoma, Arial, sans-serif;
   text-rendering: optimizeLegibility;
 }
 
