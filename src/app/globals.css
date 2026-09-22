@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Najoom brand */
+  --najoom-navy: #102a43;
+  --najoom-blue: #2563eb;
+  --najoom-sky: #0ea5e9;
+  --najoom-teal: #0f766e;
+  --najoom-gold: #d99a16;
+
+  /* Surfaces */
+  --background: #f7f9fc;
+  --surface: #ffffff;
+  --surface-soft: #eef4fb;
+
+  /* Text */
+  --foreground: #172033;
+  --muted-foreground: #64748b;
+
+  /* Borders */
+  --border: #dbe4ee;
+
+  /* Semantic */
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b91c1c;
+
+  /* Shape */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
+  --color-border: var(--border);
+
+  --color-najoom-navy: var(--najoom-navy);
+  --color-najoom-blue: var(--najoom-blue);
+  --color-najoom-sky: var(--najoom-sky);
+  --color-najoom-teal: var(--najoom-teal);
+  --color-najoom-gold: var(--najoom-gold);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  direction: rtl;
+  background: var(--background);
 }
 
 body {
+  margin: 0;
+  min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Arial, Tahoma, sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--najoom-sky);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--najoom-blue);
+  color: #ffffff;
 }
