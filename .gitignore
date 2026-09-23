@@ -42,3 +42,5 @@ next-env.d.ts
 
 # Allow safe environment template
 !.env.example
+
+/src/generated/prisma
