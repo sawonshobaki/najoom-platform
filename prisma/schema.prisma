@@ -13,34 +13,87 @@ enum UserRole {
   STUDENT
 }
 
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  MULTIPLE_SELECT
+  MATCHING
+  ORDERING
+  FILL_IN_BLANK
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionSource {
+  MANUAL
+  AI_GENERATED
+  IMPORTED
+}
+
+enum QuestionStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ARCHIVED
+}
+
+enum AssessmentType {
+  QUIZ
+  EXAM
+}
+
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+}
+
 model User {
-  id             String                  @id @default(cuid())
-  username       String                  @unique
-  passwordHash   String
-  role           UserRole
-  isActive       Boolean                 @default(true)
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         UserRole
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   student        Student?
   sectionChanges StudentSectionHistory[] @relation("SectionChangedBy")
+
+  questionsCreated  Question[] @relation("QuestionCreatedBy")
+  questionsReviewed Question[] @relation("QuestionReviewedBy")
+
+  assessmentsCreated Assessment[] @relation("AssessmentCreatedBy")
 
   @@map("users")
 }
 
 model Student {
-  id               String                  @id @default(cuid())
-  userId           String                  @unique
-  studentCode      String                  @unique
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  studentCode      String   @unique
   fullName         String
   currentSectionId String?
-  isActive         Boolean                 @default(true)
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   currentSection Section?                @relation("CurrentSection", fields: [currentSectionId], references: [id])
   sectionHistory StudentSectionHistory[]
+
+  assessmentAttempts AssessmentAttempt[]
 
   @@map("students")
 }
@@ -50,8 +103,9 @@ model Grade {
   name      String @unique
   sortOrder Int
 
-  sections  Section[]
-  semesters Semester[]
+  sections    Section[]
+  semesters   Semester[]
+  assessments Assessment[]
 
   @@map("grades")
 }
@@ -66,6 +120,8 @@ model Section {
   students    Student[]               @relation("CurrentSection")
   historyFrom StudentSectionHistory[] @relation("FromSection")
   historyTo   StudentSectionHistory[] @relation("ToSection")
+
+  assessments Assessment[]
 
   @@unique([gradeId, name])
   @@map("sections")
@@ -135,6 +191,7 @@ model Lesson {
   unit               Unit                @relation(fields: [unitId], references: [id], onDelete: Restrict)
   concepts           Concept[]
   learningObjectives LearningObjective[]
+  questions          Question[]
 
   @@unique([unitId, sortOrder])
   @@index([unitId])
@@ -147,7 +204,8 @@ model Concept {
   title       String
   description String?
 
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  lesson    Lesson     @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  questions Question[]
 
   @@index([lessonId])
   @@map("concepts")
@@ -159,8 +217,9 @@ model LearningObjective {
   title       String
   description String?
 
-  lesson Lesson                   @relation(fields: [lessonId], references: [id], onDelete: Restrict)
-  skills LearningObjectiveSkill[]
+  lesson    Lesson                   @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  skills    LearningObjectiveSkill[]
+  questions Question[]
 
   @@index([lessonId])
   @@map("learning_objectives")
@@ -186,4 +245,214 @@ model LearningObjectiveSkill {
   @@id([learningObjectiveId, skillId])
   @@index([skillId])
   @@map("learning_objective_skills")
+}
+
+// ======================================================
+// Question Bank
+// ======================================================
+
+model Question {
+  id                  String             @id @default(cuid())
+  text                String
+  type                QuestionType
+  difficulty          QuestionDifficulty
+  points              Int                @default(1)
+
+  lessonId            String
+  conceptId           String?
+  learningObjectiveId String?
+
+  source              QuestionSource     @default(MANUAL)
+  status              QuestionStatus     @default(DRAFT)
+
+  createdById         String
+  reviewedById        String?
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  lesson              Lesson             @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  concept             Concept?           @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  learningObjective   LearningObjective? @relation(fields: [learningObjectiveId], references: [id], onDelete: SetNull)
+
+  createdBy           User               @relation("QuestionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  reviewedBy          User?              @relation("QuestionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  options              QuestionOption[]
+  matchingPairs        QuestionMatchingPair[]
+  orderingItems        QuestionOrderingItem[]
+  acceptedBlankAnswers QuestionBlankAnswer[]
+
+  assessmentLinks AssessmentQuestion[]
+
+  @@index([lessonId])
+  @@index([conceptId])
+  @@index([learningObjectiveId])
+  @@index([type])
+  @@index([difficulty])
+  @@index([status])
+  @@index([source])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String  @id @default(cuid())
+  questionId String
+  text       String
+  sortOrder  Int
+  isCorrect  Boolean @default(false)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, sortOrder])
+  @@index([questionId])
+  @@map("question_options")
+}
+
+model QuestionMatchingPair {
+  id         String @id @default(cuid())
+  questionId String
+  leftText   String
+  rightText  String
+  sortOrder  Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, sortOrder])
+  @@index([questionId])
+  @@map("question_matching_pairs")
+}
+
+model QuestionOrderingItem {
+  id           String @id @default(cuid())
+  questionId   String
+  text         String
+  correctOrder Int
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, correctOrder])
+  @@index([questionId])
+  @@map("question_ordering_items")
+}
+
+model QuestionBlankAnswer {
+  id         String @id @default(cuid())
+  questionId String
+  answer     String
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, answer])
+  @@index([questionId])
+  @@map("question_blank_answers")
+}
+
+// ======================================================
+// Assessments
+// ======================================================
+
+model Assessment {
+  id                  String           @id @default(cuid())
+  title               String
+  type                AssessmentType
+  status              AssessmentStatus @default(DRAFT)
+
+  gradeId             String
+  sectionId           String?
+
+  durationSeconds     Int
+  startsAt            DateTime?
+  endsAt              DateTime?
+  showResultsAt       DateTime?
+
+  allowBackNavigation Boolean          @default(false)
+  maxAttempts         Int              @default(1)
+
+  createdById         String
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  grade               Grade            @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  section             Section?         @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  createdBy           User             @relation("AssessmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  questions           AssessmentQuestion[]
+  attempts            AssessmentAttempt[]
+
+  @@index([gradeId])
+  @@index([sectionId])
+  @@index([status])
+  @@index([startsAt])
+  @@map("assessments")
+}
+
+model AssessmentQuestion {
+  id               String  @id @default(cuid())
+  assessmentId     String
+  questionId       String
+  sortOrder        Int
+  pointsOverride   Int?
+
+  // Immutable representation captured when assessment is published.
+  // This protects historical exam integrity if the source question
+  // is edited later.
+  questionSnapshot Json?
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  answers AssessmentAnswer[]
+
+  @@unique([assessmentId, questionId])
+  @@unique([assessmentId, sortOrder])
+  @@index([questionId])
+  @@map("assessment_questions")
+}
+
+model AssessmentAttempt {
+  id           String        @id @default(cuid())
+  assessmentId String
+  studentId    String
+
+  startedAt    DateTime      @default(now())
+  submittedAt  DateTime?
+
+  score        Int?
+  maxScore     Int?
+  status       AttemptStatus @default(IN_PROGRESS)
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  answers AssessmentAnswer[]
+
+  // V1 policy: one attempt only.
+  // Application logic will also enforce maxAttempts = 1.
+  @@unique([assessmentId, studentId])
+  @@index([studentId])
+  @@index([status])
+  @@map("assessment_attempts")
+}
+
+model AssessmentAnswer {
+  id                   String   @id @default(cuid())
+  attemptId            String
+  assessmentQuestionId String
+
+  // Supports all answer types:
+  // selected option IDs, multiple selections,
+  // matching pairs, ordering, or written blank value.
+  answerPayload        Json
+
+  isCorrect            Boolean?
+  awardedPoints        Int?
+  answeredAt           DateTime @default(now())
+
+  attempt            AssessmentAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  assessmentQuestion AssessmentQuestion @relation(fields: [assessmentQuestionId], references: [id], onDelete: Restrict)
+
+  @@unique([attemptId, assessmentQuestionId])
+  @@index([assessmentQuestionId])
+  @@map("assessment_answers")
 }
