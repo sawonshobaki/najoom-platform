@@ -76,6 +76,33 @@ enum ErrorPatternStatus {
   RESOLVED
 }
 
+enum RemedialPlanTargetType {
+  STUDENT
+  GROUP
+  SECTION
+  GRADE
+}
+
+enum RemedialPlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum RemedialPlanStepStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum RemedialPlanOutcome {
+  PENDING_REASSESSMENT
+  IMPROVED
+  NEEDS_FURTHER_SUPPORT
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -95,6 +122,8 @@ model User {
 
   assignmentsCreated Assignment[]      @relation("AssignmentCreatedBy")
   assignmentGrades   AssignmentGrade[] @relation("AssignmentGradedBy")
+
+  remedialPlansCreated RemedialPlan[] @relation("RemedialPlanCreatedBy")
 
   @@map("users")
 }
@@ -119,6 +148,9 @@ model Student {
   conceptMastery StudentConceptMastery[]
   errorPatterns  StudentErrorPattern[]
 
+  individualRemedialPlans RemedialPlan[]        @relation("RemedialPlanTargetStudent")
+  remedialPlanMemberships RemedialPlanStudent[]
+
   @@map("students")
 }
 
@@ -131,6 +163,8 @@ model Grade {
   semesters   Semester[]
   assessments Assessment[]
   assignments Assignment[]
+
+  remedialPlans RemedialPlan[]
 
   @@map("grades")
 }
@@ -148,6 +182,8 @@ model Section {
 
   assessments Assessment[]
   assignments Assignment[]
+
+  remedialPlans RemedialPlan[]
 
   @@unique([gradeId, name])
   @@map("sections")
@@ -233,6 +269,7 @@ model Concept {
 
   studentMastery StudentConceptMastery[]
   errorPatterns  StudentErrorPattern[]
+  remedialPlans  RemedialPlan[]
 
   @@index([lessonId])
   @@map("concepts")
@@ -289,8 +326,8 @@ model Question {
   conceptId           String?
   learningObjectiveId String?
 
-  source              QuestionSource @default(MANUAL)
-  status              QuestionStatus @default(DRAFT)
+  source QuestionSource @default(MANUAL)
+  status QuestionStatus @default(DRAFT)
 
   createdById  String
   reviewedById String?
@@ -392,8 +429,8 @@ model Assessment {
   startsAt            DateTime?
   endsAt              DateTime?
   showResultsAt       DateTime?
-  allowBackNavigation Boolean   @default(false)
-  maxAttempts         Int       @default(1)
+  allowBackNavigation Boolean  @default(false)
+  maxAttempts         Int      @default(1)
 
   createdById String
   createdAt   DateTime @default(now())
@@ -438,7 +475,7 @@ model AssessmentAttempt {
   assessmentId String
   studentId    String
 
-  startedAt   DateTime  @default(now())
+  startedAt   DateTime @default(now())
   submittedAt DateTime?
 
   score    Int?
@@ -549,9 +586,6 @@ model AssignmentGrade {
 
 // ======================================================
 // Learning Analytics
-// Calculated by deterministic application logic.
-// AI may interpret these records later, but it does not
-// directly own or arbitrarily modify mastery calculations.
 // ======================================================
 
 model StudentConceptMastery {
@@ -559,7 +593,6 @@ model StudentConceptMastery {
   studentId String
   conceptId String
 
-  // Stored on a 0–100 scale.
   masteryScore Float @default(0)
 
   attemptsCount  Int @default(0)
@@ -568,7 +601,6 @@ model StudentConceptMastery {
 
   lastAssessedAt DateTime?
 
-  // Confidence in the available evidence, also 0–100.
   confidenceScore Float @default(0)
 
   updatedAt DateTime @updatedAt
@@ -587,8 +619,6 @@ model StudentErrorPattern {
   studentId String
   conceptId String
 
-  // Stable internal identifier for the detected error pattern.
-  // Example: CONFUSES_LIVING_AND_NONLIVING
   patternKey String
 
   occurrences      Int @default(0)
@@ -596,7 +626,6 @@ model StudentErrorPattern {
 
   lastSeenAt DateTime?
 
-  // Confidence that this is a recurring pattern, not a single error.
   confidenceScore Float @default(0)
 
   status ErrorPatternStatus @default(ACTIVE)
@@ -612,4 +641,94 @@ model StudentErrorPattern {
   @@index([conceptId])
   @@index([confidenceScore])
   @@map("student_error_patterns")
+}
+
+// ======================================================
+// Remedial Plans
+// ======================================================
+
+model RemedialPlan {
+  id    String @id @default(cuid())
+  title String
+
+  targetType RemedialPlanTargetType
+
+  targetStudentId String?
+  sectionId       String?
+  gradeId         String?
+
+  targetConceptId String
+
+  status RemedialPlanStatus @default(DRAFT)
+
+  generatedByAi Boolean @default(false)
+
+  createdById String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activatedAt DateTime?
+  completedAt DateTime?
+
+  reassessedAt DateTime?
+  outcome      RemedialPlanOutcome @default(PENDING_REASSESSMENT)
+
+  outcomeNotes String?
+
+  targetStudent Student? @relation("RemedialPlanTargetStudent", fields: [targetStudentId], references: [id], onDelete: Restrict)
+  section       Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  grade         Grade?   @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+
+  targetConcept Concept @relation(fields: [targetConceptId], references: [id], onDelete: Restrict)
+
+  createdBy User @relation("RemedialPlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  students RemedialPlanStudent[]
+  steps    RemedialPlanStep[]
+
+  @@index([targetStudentId])
+  @@index([sectionId])
+  @@index([gradeId])
+  @@index([targetConceptId])
+  @@index([status])
+  @@index([targetType])
+  @@map("remedial_plans")
+}
+
+model RemedialPlanStudent {
+  planId    String
+  studentId String
+  addedAt   DateTime @default(now())
+
+  plan    RemedialPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  student Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@id([planId, studentId])
+  @@index([studentId])
+  @@map("remedial_plan_students")
+}
+
+model RemedialPlanStep {
+  id     String @id @default(cuid())
+  planId String
+
+  title       String
+  description String
+
+  activityType String
+
+  orderIndex Int
+
+  status RemedialPlanStepStatus @default(PENDING)
+
+  estimatedMinutes Int?
+
+  completedAt DateTime?
+
+  plan RemedialPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, orderIndex])
+  @@index([planId, status])
+  @@map("remedial_plan_steps")
 }
