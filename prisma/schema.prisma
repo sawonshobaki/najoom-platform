@@ -103,6 +103,25 @@ enum RemedialPlanOutcome {
   NEEDS_FURTHER_SUPPORT
 }
 
+enum FlashcardDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum FlashcardSource {
+  MANUAL
+  AI_GENERATED
+  IMPORTED
+}
+
+enum FlashcardStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ARCHIVED
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -124,6 +143,9 @@ model User {
   assignmentGrades   AssignmentGrade[] @relation("AssignmentGradedBy")
 
   remedialPlansCreated RemedialPlan[] @relation("RemedialPlanCreatedBy")
+
+  flashcardsCreated  Flashcard[] @relation("FlashcardCreatedBy")
+  flashcardsReviewed Flashcard[] @relation("FlashcardReviewedBy")
 
   @@map("users")
 }
@@ -150,6 +172,8 @@ model Student {
 
   individualRemedialPlans RemedialPlan[]        @relation("RemedialPlanTargetStudent")
   remedialPlanMemberships RemedialPlanStudent[]
+
+  flashcardProgress StudentFlashcardProgress[]
 
   @@map("students")
 }
@@ -270,6 +294,7 @@ model Concept {
   studentMastery StudentConceptMastery[]
   errorPatterns  StudentErrorPattern[]
   remedialPlans  RemedialPlan[]
+  flashcards     Flashcard[]
 
   @@index([lessonId])
   @@map("concepts")
@@ -514,7 +539,6 @@ model AssessmentAnswer {
 
 // ======================================================
 // Assignments
-// Manual teacher grading only.
 // ======================================================
 
 model Assignment {
@@ -681,8 +705,7 @@ model RemedialPlan {
   grade         Grade?   @relation(fields: [gradeId], references: [id], onDelete: Restrict)
 
   targetConcept Concept @relation(fields: [targetConceptId], references: [id], onDelete: Restrict)
-
-  createdBy User @relation("RemedialPlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy     User    @relation("RemedialPlanCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   students RemedialPlanStudent[]
   steps    RemedialPlanStep[]
@@ -715,7 +738,6 @@ model RemedialPlanStep {
 
   title       String
   description String
-
   activityType String
 
   orderIndex Int
@@ -723,12 +745,73 @@ model RemedialPlanStep {
   status RemedialPlanStepStatus @default(PENDING)
 
   estimatedMinutes Int?
-
-  completedAt DateTime?
+  completedAt      DateTime?
 
   plan RemedialPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@unique([planId, orderIndex])
   @@index([planId, status])
   @@map("remedial_plan_steps")
+}
+
+// ======================================================
+// Flashcards
+// ======================================================
+
+model Flashcard {
+  id        String @id @default(cuid())
+  front     String
+  back      String
+
+  conceptId String
+
+  difficulty FlashcardDifficulty @default(MEDIUM)
+  source     FlashcardSource     @default(MANUAL)
+  status     FlashcardStatus     @default(DRAFT)
+
+  createdById  String
+  reviewedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  createdBy  User  @relation("FlashcardCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("FlashcardReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  studentProgress StudentFlashcardProgress[]
+
+  @@index([conceptId])
+  @@index([difficulty])
+  @@index([status])
+  @@index([source])
+  @@map("flashcards")
+}
+
+model StudentFlashcardProgress {
+  id          String @id @default(cuid())
+  studentId   String
+  flashcardId String
+
+  reviewCount   Int @default(0)
+  correctCount  Int @default(0)
+  incorrectCount Int @default(0)
+
+  masteryScore Float @default(0)
+
+  lastReviewedAt DateTime?
+  nextReviewAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  flashcard Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, flashcardId])
+  @@index([studentId, nextReviewAt])
+  @@index([flashcardId])
+  @@index([masteryScore])
+  @@map("student_flashcard_progress")
 }
