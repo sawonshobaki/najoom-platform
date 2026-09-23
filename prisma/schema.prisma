@@ -46,11 +46,12 @@ model Student {
 }
 
 model Grade {
-  id        String    @id @default(cuid())
-  name      String    @unique
+  id        String @id @default(cuid())
+  name      String @unique
   sortOrder Int
 
   sections  Section[]
+  semesters Semester[]
 
   @@map("grades")
 }
@@ -86,4 +87,103 @@ model StudentSectionHistory {
 
   @@index([studentId, effectiveAt])
   @@map("student_section_history")
+}
+
+// ======================================================
+// Curriculum
+// Grade → Semester → Unit → Lesson → Concept
+//                        └→ Learning Objective → Skill
+// ======================================================
+
+model Semester {
+  id           String @id @default(cuid())
+  gradeId      String
+  name         String
+  academicYear String
+  sortOrder    Int
+
+  grade Grade  @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  units Unit[]
+
+  @@unique([gradeId, academicYear, sortOrder])
+  @@index([gradeId])
+  @@map("semesters")
+}
+
+model Unit {
+  id          String  @id @default(cuid())
+  semesterId  String
+  title       String
+  description String?
+  sortOrder   Int
+
+  semester Semester @relation(fields: [semesterId], references: [id], onDelete: Restrict)
+  lessons  Lesson[]
+
+  @@unique([semesterId, sortOrder])
+  @@index([semesterId])
+  @@map("units")
+}
+
+model Lesson {
+  id          String  @id @default(cuid())
+  unitId      String
+  title       String
+  description String?
+  sortOrder   Int
+
+  unit               Unit                @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  concepts           Concept[]
+  learningObjectives LearningObjective[]
+
+  @@unique([unitId, sortOrder])
+  @@index([unitId])
+  @@map("lessons")
+}
+
+model Concept {
+  id          String  @id @default(cuid())
+  lessonId    String
+  title       String
+  description String?
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+
+  @@index([lessonId])
+  @@map("concepts")
+}
+
+model LearningObjective {
+  id          String  @id @default(cuid())
+  lessonId    String
+  title       String
+  description String?
+
+  lesson Lesson                   @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  skills LearningObjectiveSkill[]
+
+  @@index([lessonId])
+  @@map("learning_objectives")
+}
+
+model Skill {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+
+  learningObjectives LearningObjectiveSkill[]
+
+  @@map("skills")
+}
+
+model LearningObjectiveSkill {
+  learningObjectiveId String
+  skillId             String
+
+  learningObjective LearningObjective @relation(fields: [learningObjectiveId], references: [id], onDelete: Cascade)
+  skill             Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([learningObjectiveId, skillId])
+  @@index([skillId])
+  @@map("learning_objective_skills")
 }
