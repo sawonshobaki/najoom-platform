@@ -71,6 +71,11 @@ enum AssignmentSubmissionStatus {
   GRADED
 }
 
+enum ErrorPatternStatus {
+  ACTIVE
+  RESOLVED
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -108,8 +113,11 @@ model Student {
   currentSection Section?                @relation("CurrentSection", fields: [currentSectionId], references: [id])
   sectionHistory StudentSectionHistory[]
 
-  assessmentAttempts   AssessmentAttempt[]
+  assessmentAttempts    AssessmentAttempt[]
   assignmentSubmissions AssignmentSubmission[]
+
+  conceptMastery StudentConceptMastery[]
+  errorPatterns  StudentErrorPattern[]
 
   @@map("students")
 }
@@ -165,8 +173,6 @@ model StudentSectionHistory {
 
 // ======================================================
 // Curriculum
-// Grade → Semester → Unit → Lesson → Concept
-//                        └→ Learning Objective → Skill
 // ======================================================
 
 model Semester {
@@ -225,6 +231,9 @@ model Concept {
   lesson    Lesson     @relation(fields: [lessonId], references: [id], onDelete: Restrict)
   questions Question[]
 
+  studentMastery StudentConceptMastery[]
+  errorPatterns  StudentErrorPattern[]
+
   @@index([lessonId])
   @@map("concepts")
 }
@@ -280,21 +289,21 @@ model Question {
   conceptId           String?
   learningObjectiveId String?
 
-  source              QuestionSource     @default(MANUAL)
-  status              QuestionStatus     @default(DRAFT)
+  source              QuestionSource @default(MANUAL)
+  status              QuestionStatus @default(DRAFT)
 
-  createdById         String
-  reviewedById        String?
+  createdById  String
+  reviewedById String?
 
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  lesson              Lesson             @relation(fields: [lessonId], references: [id], onDelete: Restrict)
-  concept             Concept?           @relation(fields: [conceptId], references: [id], onDelete: SetNull)
-  learningObjective   LearningObjective? @relation(fields: [learningObjectiveId], references: [id], onDelete: SetNull)
+  lesson            Lesson             @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  concept           Concept?           @relation(fields: [conceptId], references: [id], onDelete: SetNull)
+  learningObjective LearningObjective? @relation(fields: [learningObjectiveId], references: [id], onDelete: SetNull)
 
-  createdBy           User               @relation("QuestionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  reviewedBy          User?              @relation("QuestionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdBy  User  @relation("QuestionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("QuestionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
 
   options              QuestionOption[]
   matchingPairs        QuestionMatchingPair[]
@@ -376,27 +385,26 @@ model Assessment {
   type                AssessmentType
   status              AssessmentStatus @default(DRAFT)
 
-  gradeId             String
-  sectionId           String?
+  gradeId   String
+  sectionId String?
 
   durationSeconds     Int
   startsAt            DateTime?
   endsAt              DateTime?
   showResultsAt       DateTime?
+  allowBackNavigation Boolean   @default(false)
+  maxAttempts         Int       @default(1)
 
-  allowBackNavigation Boolean          @default(false)
-  maxAttempts         Int              @default(1)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  createdById         String
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
+  grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("AssessmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
-  grade               Grade            @relation(fields: [gradeId], references: [id], onDelete: Restrict)
-  section             Section?         @relation(fields: [sectionId], references: [id], onDelete: Restrict)
-  createdBy           User             @relation("AssessmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-
-  questions           AssessmentQuestion[]
-  attempts            AssessmentAttempt[]
+  questions AssessmentQuestion[]
+  attempts  AssessmentAttempt[]
 
   @@index([gradeId])
   @@index([sectionId])
@@ -406,11 +414,12 @@ model Assessment {
 }
 
 model AssessmentQuestion {
-  id               String @id @default(cuid())
-  assessmentId     String
-  questionId       String
-  sortOrder        Int
-  pointsOverride   Int?
+  id             String @id @default(cuid())
+  assessmentId   String
+  questionId     String
+  sortOrder      Int
+  pointsOverride Int?
+
   questionSnapshot Json?
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -429,12 +438,12 @@ model AssessmentAttempt {
   assessmentId String
   studentId    String
 
-  startedAt    DateTime      @default(now())
-  submittedAt  DateTime?
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
 
-  score        Int?
-  maxScore     Int?
-  status       AttemptStatus @default(IN_PROGRESS)
+  score    Int?
+  maxScore Int?
+  status   AttemptStatus @default(IN_PROGRESS)
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
   student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
@@ -452,10 +461,11 @@ model AssessmentAnswer {
   attemptId            String
   assessmentQuestionId String
 
-  answerPayload        Json
-  isCorrect            Boolean?
-  awardedPoints        Int?
-  answeredAt           DateTime @default(now())
+  answerPayload Json
+
+  isCorrect     Boolean?
+  awardedPoints Int?
+  answeredAt    DateTime @default(now())
 
   attempt            AssessmentAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   assessmentQuestion AssessmentQuestion @relation(fields: [assessmentQuestionId], references: [id], onDelete: Restrict)
@@ -467,32 +477,29 @@ model AssessmentAnswer {
 
 // ======================================================
 // Assignments
-// Student answers with text.
-// Teacher grades manually.
-// No AI grading.
-// No file uploads in V1.
+// Manual teacher grading only.
 // ======================================================
 
 model Assignment {
-  id          String           @id @default(cuid())
-  title       String
-  prompt      String
+  id     String @id @default(cuid())
+  title  String
+  prompt String
 
-  gradeId     String
-  sectionId   String?
+  gradeId   String
+  sectionId String?
 
-  maxScore    Int
-  dueAt       DateTime?
+  maxScore Int
+  dueAt    DateTime?
 
-  status      AssignmentStatus @default(DRAFT)
+  status AssignmentStatus @default(DRAFT)
 
   createdById String
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  grade       Grade            @relation(fields: [gradeId], references: [id], onDelete: Restrict)
-  section     Section?         @relation(fields: [sectionId], references: [id], onDelete: Restrict)
-  createdBy   User             @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  createdBy User     @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   submissions AssignmentSubmission[]
 
@@ -508,16 +515,15 @@ model AssignmentSubmission {
   assignmentId String
   studentId    String
 
-  answerText   String
-  submittedAt  DateTime                   @default(now())
-  status       AssignmentSubmissionStatus @default(SUBMITTED)
+  answerText  String
+  submittedAt DateTime                   @default(now())
+  status      AssignmentSubmissionStatus @default(SUBMITTED)
 
   assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
   student    Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   grade AssignmentGrade?
 
-  // One submission per student for each assignment in V1.
   @@unique([assignmentId, studentId])
   @@index([studentId])
   @@index([status])
@@ -525,18 +531,85 @@ model AssignmentSubmission {
 }
 
 model AssignmentGrade {
-  id           String   @id @default(cuid())
-  submissionId String   @unique
+  id           String @id @default(cuid())
+  submissionId String @unique
 
-  score        Int
-  feedback     String?
+  score    Int
+  feedback String?
 
-  gradedById   String
-  gradedAt     DateTime @default(now())
+  gradedById String
+  gradedAt   DateTime @default(now())
 
   submission AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   gradedBy   User                 @relation("AssignmentGradedBy", fields: [gradedById], references: [id], onDelete: Restrict)
 
   @@index([gradedById])
   @@map("assignment_grades")
+}
+
+// ======================================================
+// Learning Analytics
+// Calculated by deterministic application logic.
+// AI may interpret these records later, but it does not
+// directly own or arbitrarily modify mastery calculations.
+// ======================================================
+
+model StudentConceptMastery {
+  id        String @id @default(cuid())
+  studentId String
+  conceptId String
+
+  // Stored on a 0–100 scale.
+  masteryScore Float @default(0)
+
+  attemptsCount  Int @default(0)
+  correctCount   Int @default(0)
+  incorrectCount Int @default(0)
+
+  lastAssessedAt DateTime?
+
+  // Confidence in the available evidence, also 0–100.
+  confidenceScore Float @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, conceptId])
+  @@index([conceptId])
+  @@index([masteryScore])
+  @@map("student_concept_mastery")
+}
+
+model StudentErrorPattern {
+  id        String @id @default(cuid())
+  studentId String
+  conceptId String
+
+  // Stable internal identifier for the detected error pattern.
+  // Example: CONFUSES_LIVING_AND_NONLIVING
+  patternKey String
+
+  occurrences      Int @default(0)
+  assessmentsCount Int @default(0)
+
+  lastSeenAt DateTime?
+
+  // Confidence that this is a recurring pattern, not a single error.
+  confidenceScore Float @default(0)
+
+  status ErrorPatternStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  concept Concept @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, conceptId, patternKey])
+  @@index([studentId, status])
+  @@index([conceptId])
+  @@index([confidenceScore])
+  @@map("student_error_patterns")
 }
