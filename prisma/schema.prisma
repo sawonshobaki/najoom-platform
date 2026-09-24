@@ -201,6 +201,8 @@ model User {
   student Student?
   teacher Teacher?
 
+  sessions Session[]
+
   sectionChanges StudentSectionHistory[] @relation("SectionChangedBy")
 
   questionsCreated  Question[] @relation("QuestionCreatedBy")
@@ -1189,4 +1191,30 @@ model SystemSetting {
 
   @@index([updatedById])
   @@map("system_settings")
+}
+
+// ======================================================
+// Authentication Sessions
+// Stores only the hash of the raw session token.
+// Supports multiple devices and explicit revocation.
+// ======================================================
+
+model Session {
+  id        String @id @default(cuid())
+  userId    String
+  tokenHash String @unique
+
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime?
+
+  revokedAt    DateTime?
+  revokeReason String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, revokedAt])
+  @@map("sessions")
 }
