@@ -133,6 +133,36 @@ enum PointEventType {
   MANUAL_ADJUSTMENT
 }
 
+enum NotificationType {
+  GENERAL
+  ASSIGNMENT
+  ASSESSMENT
+  ACHIEVEMENT
+  REMEDIAL_PLAN
+  RESOURCE
+  SYSTEM
+}
+
+enum ResourceType {
+  VIDEO
+  WEBSITE
+  ARTICLE
+  OTHER
+}
+
+enum ResourceStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  ARCHIVED
+}
+
+enum SchoolContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -159,6 +189,16 @@ model User {
   flashcardsReviewed Flashcard[] @relation("FlashcardReviewedBy")
 
   pointEventsCreated PointEvent[] @relation("PointEventCreatedBy")
+
+  notificationsCreated Notification[]          @relation("NotificationCreatedBy")
+  notificationRecipients NotificationRecipient[]
+
+  resourcesCreated  Resource[] @relation("ResourceCreatedBy")
+  resourcesApproved Resource[] @relation("ResourceApprovedBy")
+
+  schoolContentCreated SchoolContent[] @relation("SchoolContentCreatedBy")
+
+  auditLogs AuditLog[] @relation("AuditLogActor")
 
   @@map("users")
 }
@@ -206,6 +246,7 @@ model Grade {
   assignments Assignment[]
 
   remedialPlans RemedialPlan[]
+  resources     Resource[]
 
   @@map("grades")
 }
@@ -225,6 +266,7 @@ model Section {
   assignments Assignment[]
 
   remedialPlans RemedialPlan[]
+  resources     Resource[]
 
   @@unique([gradeId, name])
   @@map("sections")
@@ -293,6 +335,7 @@ model Lesson {
   concepts           Concept[]
   learningObjectives LearningObjective[]
   questions          Question[]
+  resources          Resource[]
 
   @@unique([unitId, sortOrder])
   @@index([unitId])
@@ -312,6 +355,7 @@ model Concept {
   errorPatterns  StudentErrorPattern[]
   remedialPlans  RemedialPlan[]
   flashcards     Flashcard[]
+  resources      Resource[]
 
   @@index([lessonId])
   @@map("concepts")
@@ -835,7 +879,6 @@ model StudentFlashcardProgress {
 
 // ======================================================
 // Points, Badges & Leaderboard Foundation
-// Ranking itself is calculated from current points.
 // ======================================================
 
 model PointEvent {
@@ -873,8 +916,8 @@ model StudentPoints {
 }
 
 model Badge {
-  id          String  @id @default(cuid())
-  name        String  @unique
+  id          String @id @default(cuid())
+  name        String @unique
   description String
   iconKey     String
 
@@ -892,13 +935,12 @@ model Badge {
 }
 
 model StudentBadge {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   studentId String
   badgeId   String
 
   awardedAt DateTime @default(now())
-
-  source String?
+  source    String?
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   badge   Badge   @relation(fields: [badgeId], references: [id], onDelete: Restrict)
@@ -907,4 +949,138 @@ model StudentBadge {
   @@index([badgeId])
   @@index([studentId, awardedAt])
   @@map("student_badges")
+}
+
+// ======================================================
+// Notifications
+// Recipients are materialized per user.
+// ======================================================
+
+model Notification {
+  id    String @id @default(cuid())
+  title String
+  body  String
+  type  NotificationType @default(GENERAL)
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  createdBy User? @relation("NotificationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  recipients NotificationRecipient[]
+
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String @id @default(cuid())
+  notificationId String
+  userId         String
+
+  readAt DateTime?
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt])
+  @@map("notification_recipients")
+}
+
+// ======================================================
+// Educational Resources
+// AI suggestions must be approved before students see them.
+// ======================================================
+
+model Resource {
+  id    String @id @default(cuid())
+  title String
+  url   String
+
+  resourceType ResourceType
+  status       ResourceStatus @default(DRAFT)
+
+  gradeId   String
+  sectionId String?
+  lessonId  String?
+  conceptId String?
+
+  createdById  String
+  approvedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grade   Grade    @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  section Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  lesson  Lesson?  @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  concept Concept? @relation(fields: [conceptId], references: [id], onDelete: Restrict)
+
+  createdBy  User  @relation("ResourceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("ResourceApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([gradeId])
+  @@index([sectionId])
+  @@index([lessonId])
+  @@index([conceptId])
+  @@index([status])
+  @@index([resourceType])
+  @@map("resources")
+}
+
+// ======================================================
+// School Content
+// General platform/school announcements and static content.
+// ======================================================
+
+model SchoolContent {
+  id          String @id @default(cuid())
+  contentType String
+  title       String
+  body        String
+
+  status SchoolContentStatus @default(DRAFT)
+
+  createdById String
+
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User @relation("SchoolContentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([contentType])
+  @@index([status])
+  @@index([publishedAt])
+  @@map("school_content")
+}
+
+// ======================================================
+// Audit Log
+// Internal only. Not shown to ordinary users.
+// ======================================================
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  actorUserId String?
+
+  action     String
+  entityType String
+  entityId   String
+
+  beforeJson Json?
+  afterJson  Json?
+  metadata   Json?
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation("AuditLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@map("audit_logs")
 }
