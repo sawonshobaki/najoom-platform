@@ -122,6 +122,17 @@ enum FlashcardStatus {
   ARCHIVED
 }
 
+enum PointEventType {
+  CONCEPT_MASTERY
+  IMPROVEMENT
+  ACTIVITY_COMPLETION
+  PERSISTENCE
+  REMEDIAL_PLAN_COMPLETION
+  FLASHCARD_PROGRESS
+  ACHIEVEMENT
+  MANUAL_ADJUSTMENT
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -146,6 +157,8 @@ model User {
 
   flashcardsCreated  Flashcard[] @relation("FlashcardCreatedBy")
   flashcardsReviewed Flashcard[] @relation("FlashcardReviewedBy")
+
+  pointEventsCreated PointEvent[] @relation("PointEventCreatedBy")
 
   @@map("users")
 }
@@ -174,6 +187,10 @@ model Student {
   remedialPlanMemberships RemedialPlanStudent[]
 
   flashcardProgress StudentFlashcardProgress[]
+
+  pointEvents PointEvent[]
+  points      StudentPoints?
+  badges      StudentBadge[]
 
   @@map("students")
 }
@@ -736,8 +753,8 @@ model RemedialPlanStep {
   id     String @id @default(cuid())
   planId String
 
-  title       String
-  description String
+  title        String
+  description  String
   activityType String
 
   orderIndex Int
@@ -759,9 +776,9 @@ model RemedialPlanStep {
 // ======================================================
 
 model Flashcard {
-  id        String @id @default(cuid())
-  front     String
-  back      String
+  id    String @id @default(cuid())
+  front String
+  back  String
 
   conceptId String
 
@@ -794,8 +811,8 @@ model StudentFlashcardProgress {
   studentId   String
   flashcardId String
 
-  reviewCount   Int @default(0)
-  correctCount  Int @default(0)
+  reviewCount    Int @default(0)
+  correctCount   Int @default(0)
   incorrectCount Int @default(0)
 
   masteryScore Float @default(0)
@@ -814,4 +831,80 @@ model StudentFlashcardProgress {
   @@index([flashcardId])
   @@index([masteryScore])
   @@map("student_flashcard_progress")
+}
+
+// ======================================================
+// Points, Badges & Leaderboard Foundation
+// Ranking itself is calculated from current points.
+// ======================================================
+
+model PointEvent {
+  id        String         @id @default(cuid())
+  studentId String
+  eventType PointEventType
+  points    Int
+
+  sourceType String?
+  sourceId   String?
+
+  metadata Json?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("PointEventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([studentId, createdAt])
+  @@index([eventType])
+  @@index([sourceType, sourceId])
+  @@map("point_events")
+}
+
+model StudentPoints {
+  studentId   String   @id
+  totalPoints Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([totalPoints])
+  @@map("student_points")
+}
+
+model Badge {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String
+  iconKey     String
+
+  criteriaJson Json
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  students StudentBadge[]
+
+  @@index([isActive])
+  @@map("badges")
+}
+
+model StudentBadge {
+  id        String   @id @default(cuid())
+  studentId String
+  badgeId   String
+
+  awardedAt DateTime @default(now())
+
+  source String?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  badge   Badge   @relation(fields: [badgeId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, badgeId])
+  @@index([badgeId])
+  @@index([studentId, awardedAt])
+  @@map("student_badges")
 }
