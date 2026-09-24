@@ -163,6 +163,27 @@ enum SchoolContentStatus {
   ARCHIVED
 }
 
+enum AiProvider {
+  GEMINI
+}
+
+enum AiFeature {
+  QUESTION_GENERATION
+  ASSESSMENT_GENERATION
+  STUDENT_ANALYSIS
+  CLASS_ANALYSIS
+  REMEDIAL_PLAN
+  FLASHCARDS
+  RESOURCE_SUGGESTIONS
+}
+
+enum AiRequestStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REJECTED
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -172,7 +193,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  student        Student?
+  student Student?
+  teacher Teacher?
+
   sectionChanges StudentSectionHistory[] @relation("SectionChangedBy")
 
   questionsCreated  Question[] @relation("QuestionCreatedBy")
@@ -190,7 +213,7 @@ model User {
 
   pointEventsCreated PointEvent[] @relation("PointEventCreatedBy")
 
-  notificationsCreated Notification[]          @relation("NotificationCreatedBy")
+  notificationsCreated  Notification[]          @relation("NotificationCreatedBy")
   notificationRecipients NotificationRecipient[]
 
   resourcesCreated  Resource[] @relation("ResourceCreatedBy")
@@ -199,6 +222,10 @@ model User {
   schoolContentCreated SchoolContent[] @relation("SchoolContentCreatedBy")
 
   auditLogs AuditLog[] @relation("AuditLogActor")
+
+  aiRequests AiRequest[] @relation("AiRequestRequestedBy")
+
+  systemSettingsUpdated SystemSetting[] @relation("SystemSettingUpdatedBy")
 
   @@map("users")
 }
@@ -233,6 +260,21 @@ model Student {
   badges      StudentBadge[]
 
   @@map("students")
+}
+
+model Teacher {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  teacherCode String   @unique
+  fullName    String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([isActive])
+  @@map("teachers")
 }
 
 model Grade {
@@ -402,11 +444,11 @@ model LearningObjectiveSkill {
 // ======================================================
 
 model Question {
-  id                  String             @id @default(cuid())
-  text                String
-  type                QuestionType
-  difficulty          QuestionDifficulty
-  points              Int                @default(1)
+  id         String             @id @default(cuid())
+  text       String
+  type       QuestionType
+  difficulty QuestionDifficulty
+  points     Int                @default(1)
 
   lessonId            String
   conceptId           String?
@@ -503,10 +545,10 @@ model QuestionBlankAnswer {
 // ======================================================
 
 model Assessment {
-  id                  String           @id @default(cuid())
-  title               String
-  type                AssessmentType
-  status              AssessmentStatus @default(DRAFT)
+  id     String           @id @default(cuid())
+  title  String
+  type   AssessmentType
+  status AssessmentStatus @default(DRAFT)
 
   gradeId   String
   sectionId String?
@@ -557,7 +599,7 @@ model AssessmentQuestion {
 }
 
 model AssessmentAttempt {
-  id           String        @id @default(cuid())
+  id           String @id @default(cuid())
   assessmentId String
   studentId    String
 
@@ -580,7 +622,7 @@ model AssessmentAttempt {
 }
 
 model AssessmentAnswer {
-  id                   String   @id @default(cuid())
+  id                   String @id @default(cuid())
   attemptId            String
   assessmentQuestionId String
 
@@ -633,7 +675,7 @@ model Assignment {
 }
 
 model AssignmentSubmission {
-  id           String                     @id @default(cuid())
+  id           String @id @default(cuid())
   assignmentId String
   studentId    String
 
@@ -953,7 +995,6 @@ model StudentBadge {
 
 // ======================================================
 // Notifications
-// Recipients are materialized per user.
 // ======================================================
 
 model Notification {
@@ -991,7 +1032,6 @@ model NotificationRecipient {
 
 // ======================================================
 // Educational Resources
-// AI suggestions must be approved before students see them.
 // ======================================================
 
 model Resource {
@@ -1032,7 +1072,6 @@ model Resource {
 
 // ======================================================
 // School Content
-// General platform/school announcements and static content.
 // ======================================================
 
 model SchoolContent {
@@ -1059,7 +1098,8 @@ model SchoolContent {
 
 // ======================================================
 // Audit Log
-// Internal only. Not shown to ordinary users.
+// Append-only at application level.
+// Never store passwords, API keys, tokens, or other secrets.
 // ======================================================
 
 model AuditLog {
@@ -1083,4 +1123,69 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action])
   @@map("audit_logs")
+}
+
+// ======================================================
+// AI Request Logging
+// Operational metadata only.
+// Do not persist raw prompts/responses or unnecessary
+// student-sensitive data here.
+// ======================================================
+
+model AiRequest {
+  id String @id @default(cuid())
+
+  provider AiProvider @default(GEMINI)
+  feature  AiFeature
+  status   AiRequestStatus @default(PENDING)
+
+  modelName     String?
+  promptVersion String?
+
+  requestedById String?
+
+  inputHash String?
+
+  latencyMs Int?
+
+  inputTokens  Int?
+  outputTokens Int?
+
+  errorCode String?
+
+  metadata Json?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  requestedBy User? @relation("AiRequestRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([feature, createdAt])
+  @@index([status, createdAt])
+  @@index([requestedById, createdAt])
+  @@index([provider])
+  @@map("ai_requests")
+}
+
+// ======================================================
+// System Settings
+// Non-secret configuration only.
+// Secrets such as API keys stay in environment variables.
+// ======================================================
+
+model SystemSetting {
+  id          String @id @default(cuid())
+  key         String @unique
+  value       Json
+  description String?
+
+  updatedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  updatedBy User? @relation("SystemSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
+  @@map("system_settings")
 }
