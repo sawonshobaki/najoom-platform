@@ -1218,3 +1218,27 @@ model Session {
   @@index([userId, revokedAt])
   @@map("sessions")
 }
+enum LoginThrottleScope {
+  USERNAME
+  NETWORK
+  USERNAME_NETWORK
+}
+
+model LoginThrottle {
+  id             String             @id @default(cuid())
+  scope          LoginThrottleScope
+  identifierHash String
+
+  failureCount Int      @default(0)
+  windowStartedAt DateTime
+  lastFailureAt   DateTime?
+  blockedUntil    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, identifierHash])
+  @@index([blockedUntil])
+  @@index([updatedAt])
+  @@map("login_throttles")
+}
