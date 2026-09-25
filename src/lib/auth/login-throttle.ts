@@ -6,6 +6,7 @@ import { LoginThrottleScope } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
 const MILLISECONDS_PER_MINUTE = 60 * 1000;
+const MAX_CONCURRENCY_RETRIES = 5;
 
 type LoginThrottlePolicy = {
   windowMinutes: number;
@@ -14,19 +15,6 @@ type LoginThrottlePolicy = {
   fixedBlockMinutes?: number;
 };
 
-/**
- * لكل نطاق سياسة مستقلة.
- *
- * USERNAME:
- * حماية حساب بعينه من التخمين المتكرر.
- *
- * USERNAME_NETWORK:
- * حماية حساب معين من مصدر شبكة واحد.
- *
- * NETWORK:
- * حماية عامة من مصدر شبكي يجرّب أعدادًا كبيرة من الحسابات.
- * الحد هنا أعلى بكثير لأن عدة طالبات قد يشتركن في نفس الشبكة.
- */
 const LOGIN_THROTTLE_POLICIES: Record<
   LoginThrottleScope,
   LoginThrottlePolicy
@@ -56,14 +44,6 @@ export type LoginThrottleStatus = {
   retryAfterSeconds: number;
 };
 
-/**
- * نحول المعرّف الخام إلى hash قبل التخزين.
- *
- * ملاحظة:
- * SHA-256 يمنع تخزين القيمة الخام، لكنه لا يجعل
- * عناوين IP منخفضة التنوع مجهولة بشكل كامل.
- * سنستبدله لاحقًا بـ HMAC قبل تفعيل networkKey فعليًا.
- */
 export function hashThrottleIdentifier(
   identifier: string,
 ): string {
@@ -88,13 +68,6 @@ function getWindowExpiration(
   );
 }
 
-/**
- * USERNAME و USERNAME_NETWORK:
- * حظر تصاعدي 1، 2، 4، 8... حتى الحد الأقصى.
- *
- * NETWORK:
- * حظر ثابت وقصير لتجنب تعطيل شبكة مشتركة لفترة طويلة.
- */
 function getBlockDurationMinutes(
   failureCount: number,
   policy: LoginThrottlePolicy,
@@ -114,6 +87,24 @@ function getBlockDurationMinutes(
     blockMinutes,
     policy.maxBlockMinutes,
   );
+}
+
+/**
+ * نتحقق من خطأ unique constraint بدون ربط
+ * طبقة الحماية بتفاصيل داخلية إضافية من Prisma.
+ */
+function isUniqueConstraintError(
+  error: unknown,
+): boolean {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error)
+  ) {
+    return false;
+  }
+
+  return error.code === "P2002";
 }
 
 export async function getLoginThrottleStatus(
@@ -172,86 +163,134 @@ export async function recordFailedLoginAttempt(
     hashThrottleIdentifier(identifier);
 
   const policy = getThrottlePolicy(scope);
-  const now = new Date();
 
-  const existing =
-    await prisma.loginThrottle.findUnique({
-      where: {
-        scope_identifierHash: {
-          scope,
-          identifierHash,
-        },
-      },
-    });
-
-  if (!existing) {
-    await prisma.loginThrottle.create({
-      data: {
-        scope,
-        identifierHash,
-        failureCount: 1,
-        windowStartedAt: now,
-        lastFailureAt: now,
-      },
-    });
-
-    return;
-  }
-
-  const windowExpired =
-    getWindowExpiration(
-      existing.windowStartedAt,
-      policy.windowMinutes,
-    ) <= now;
-
-  if (windowExpired) {
-    await prisma.loginThrottle.update({
-      where: {
-        id: existing.id,
-      },
-      data: {
-        failureCount: 1,
-        windowStartedAt: now,
-        lastFailureAt: now,
-        blockedUntil: null,
-      },
-    });
-
-    return;
-  }
-
-  const nextFailureCount =
-    existing.failureCount + 1;
-
-  let blockedUntil: Date | null = null;
-
-  if (
-    nextFailureCount >=
-    policy.failureLimit
+  /**
+   * قد تصل عدة محاولات في اللحظة نفسها.
+   * نعيد المحاولة عند اكتشاف أن طلبًا آخر سبقنا
+   * وغير السجل بين القراءة والكتابة.
+   */
+  for (
+    let attempt = 0;
+    attempt < MAX_CONCURRENCY_RETRIES;
+    attempt += 1
   ) {
-    const blockMinutes =
-      getBlockDurationMinutes(
-        nextFailureCount,
-        policy,
-      );
+    const now = new Date();
 
-    blockedUntil = new Date(
-      now.getTime() +
-        blockMinutes *
-          MILLISECONDS_PER_MINUTE,
-    );
+    const existing =
+      await prisma.loginThrottle.findUnique({
+        where: {
+          scope_identifierHash: {
+            scope,
+            identifierHash,
+          },
+        },
+      });
+
+    if (!existing) {
+      try {
+        await prisma.loginThrottle.create({
+          data: {
+            scope,
+            identifierHash,
+            failureCount: 1,
+            windowStartedAt: now,
+            lastFailureAt: now,
+          },
+        });
+
+        return;
+      } catch (error) {
+        /**
+         * ربما أنشأ طلب متزامن السجل بعد قراءتنا مباشرة.
+         * في هذه الحالة نعيد القراءة بدل إسقاط المحاولة.
+         */
+        if (isUniqueConstraintError(error)) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    const windowExpired =
+      getWindowExpiration(
+        existing.windowStartedAt,
+        policy.windowMinutes,
+      ) <= now;
+
+    if (windowExpired) {
+      const resetResult =
+        await prisma.loginThrottle.updateMany({
+          where: {
+            id: existing.id,
+            failureCount: existing.failureCount,
+            windowStartedAt:
+              existing.windowStartedAt,
+          },
+          data: {
+            failureCount: 1,
+            windowStartedAt: now,
+            lastFailureAt: now,
+            blockedUntil: null,
+          },
+        });
+
+      if (resetResult.count === 1) {
+        return;
+      }
+
+      continue;
+    }
+
+    const nextFailureCount =
+      existing.failureCount + 1;
+
+    let blockedUntil: Date | null = null;
+
+    if (
+      nextFailureCount >=
+      policy.failureLimit
+    ) {
+      const blockMinutes =
+        getBlockDurationMinutes(
+          nextFailureCount,
+          policy,
+        );
+
+      blockedUntil = new Date(
+        now.getTime() +
+          blockMinutes *
+            MILLISECONDS_PER_MINUTE,
+      );
+    }
+
+    const updateResult =
+      await prisma.loginThrottle.updateMany({
+        where: {
+          id: existing.id,
+          failureCount: existing.failureCount,
+          windowStartedAt:
+            existing.windowStartedAt,
+        },
+        data: {
+          failureCount: nextFailureCount,
+          lastFailureAt: now,
+          blockedUntil,
+        },
+      });
+
+    if (updateResult.count === 1) {
+      return;
+    }
   }
 
-  await prisma.loginThrottle.update({
-    where: {
-      id: existing.id,
-    },
-    data: {
-      failureCount: nextFailureCount,
-      lastFailureAt: now,
-      blockedUntil,
-    },
-  });
+  /**
+   * إذا استمر التنافس بعد عدة محاولات، لا نتجاهل
+   * فشل الحماية بصمت.
+   */
+  throw new Error(
+    "Unable to record login throttle after concurrent updates.",
+  );
 }
 
 export async function clearLoginThrottle(
