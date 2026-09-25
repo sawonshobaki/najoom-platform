@@ -3,30 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LoginThrottleScope } from "@/generated/prisma/client";
 
 const {
-  loginWithUsernameAndPasswordMock,
-  getLoginThrottleStatusMock,
-  recordFailedLoginAttemptMock,
   clearLoginThrottleMock,
+  getLoginThrottleStatusMock,
+  loginWithUsernameAndPasswordMock,
+  recordFailedLoginAttemptMock,
 } = vi.hoisted(() => ({
-  loginWithUsernameAndPasswordMock: vi.fn(),
-  getLoginThrottleStatusMock: vi.fn(),
-  recordFailedLoginAttemptMock: vi.fn(),
   clearLoginThrottleMock: vi.fn(),
+  getLoginThrottleStatusMock: vi.fn(),
+  loginWithUsernameAndPasswordMock: vi.fn(),
+  recordFailedLoginAttemptMock: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/login-throttle", () => ({
+  clearLoginThrottle: clearLoginThrottleMock,
+  getLoginThrottleStatus: getLoginThrottleStatusMock,
+  recordFailedLoginAttempt: recordFailedLoginAttemptMock,
 }));
 
 vi.mock("@/lib/auth/login-service", () => ({
   INVALID_LOGIN_MESSAGE: "بيانات الدخول غير صحيحة.",
   loginWithUsernameAndPassword:
     loginWithUsernameAndPasswordMock,
-}));
-
-vi.mock("@/lib/auth/login-throttle", () => ({
-  getLoginThrottleStatus:
-    getLoginThrottleStatusMock,
-  recordFailedLoginAttempt:
-    recordFailedLoginAttemptMock,
-  clearLoginThrottle:
-    clearLoginThrottleMock,
 }));
 
 import { loginFromRequest } from "@/lib/auth/login-request";
@@ -43,48 +40,52 @@ describe("login request orchestration", () => {
 
   it("falls back to username-only protection when networkKey is missing", async () => {
     loginWithUsernameAndPasswordMock.mockResolvedValue({
-      success: true,
-      userId: "user-1",
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
     });
 
     const result = await loginFromRequest({
       username: "student-001",
-      password: "NajoomScience2026",
+      password: "WrongPassword2026",
+    });
+
+    expect(result).toEqual({
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
     });
 
     expect(
       loginWithUsernameAndPasswordMock,
     ).toHaveBeenCalledWith(
       "student-001",
-      "NajoomScience2026",
+      "WrongPassword2026",
     );
 
     expect(
       getLoginThrottleStatusMock,
     ).not.toHaveBeenCalled();
 
-    expect(result).toEqual({
-      success: true,
-      userId: "user-1",
-    });
+    expect(
+      recordFailedLoginAttemptMock,
+    ).not.toHaveBeenCalled();
   });
 
   it("normalizes username before login", async () => {
     loginWithUsernameAndPasswordMock.mockResolvedValue({
-      success: true,
-      userId: "user-1",
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
     });
 
     await loginFromRequest({
       username: "  student-001  ",
-      password: "NajoomScience2026",
+      password: "WrongPassword2026",
     });
 
     expect(
       loginWithUsernameAndPasswordMock,
     ).toHaveBeenCalledWith(
       "student-001",
-      "NajoomScience2026",
+      "WrongPassword2026",
     );
   });
 
@@ -101,8 +102,8 @@ describe("login request orchestration", () => {
 
     const result = await loginFromRequest({
       username: "student-001",
-      password: "NajoomScience2026",
-      networkKey: "network-a",
+      password: "WrongPassword2026",
+      networkKey: "school-network",
     });
 
     expect(result).toEqual({
@@ -129,15 +130,15 @@ describe("login request orchestration", () => {
 
     const result = await loginFromRequest({
       username: "student-001",
-      password: "NajoomScience2026",
-      networkKey: "network-a",
+      password: "WrongPassword2026",
+      networkKey: "school-network",
     });
 
-    expect(result.success).toBe(false);
-
-    if (!result.success) {
-      expect(result.retryAfterSeconds).toBe(90);
-    }
+    expect(result).toEqual({
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
+      retryAfterSeconds: 90,
+    });
 
     expect(
       loginWithUsernameAndPasswordMock,
@@ -148,7 +149,7 @@ describe("login request orchestration", () => {
     getLoginThrottleStatusMock
       .mockResolvedValueOnce({
         blocked: true,
-        retryAfterSeconds: 45,
+        retryAfterSeconds: 60,
       })
       .mockResolvedValueOnce({
         blocked: true,
@@ -157,15 +158,15 @@ describe("login request orchestration", () => {
 
     const result = await loginFromRequest({
       username: "student-001",
-      password: "NajoomScience2026",
-      networkKey: "network-a",
+      password: "WrongPassword2026",
+      networkKey: "school-network",
     });
 
-    expect(result.success).toBe(false);
-
-    if (!result.success) {
-      expect(result.retryAfterSeconds).toBe(180);
-    }
+    expect(result).toEqual({
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
+      retryAfterSeconds: 180,
+    });
   });
 
   it("records network throttles after a failed login", async () => {
@@ -174,10 +175,15 @@ describe("login request orchestration", () => {
       message: "بيانات الدخول غير صحيحة.",
     });
 
-    await loginFromRequest({
+    const result = await loginFromRequest({
       username: "student-001",
       password: "WrongPassword2026",
-      networkKey: "network-a",
+      networkKey: "school-network",
+    });
+
+    expect(result).toEqual({
+      success: false,
+      message: "بيانات الدخول غير صحيحة.",
     });
 
     expect(
@@ -188,18 +194,18 @@ describe("login request orchestration", () => {
       recordFailedLoginAttemptMock,
     ).toHaveBeenCalledWith(
       LoginThrottleScope.NETWORK,
-      "network-a",
+      "school-network",
     );
 
     expect(
       recordFailedLoginAttemptMock,
     ).toHaveBeenCalledWith(
       LoginThrottleScope.USERNAME_NETWORK,
-      "student-001:network-a",
+      "student-001:school-network",
     );
   });
 
-  it("clears network throttles after a successful login", async () => {
+  it("clears only the username-network throttle after a successful login", async () => {
     loginWithUsernameAndPasswordMock.mockResolvedValue({
       success: true,
       userId: "user-1",
@@ -207,8 +213,8 @@ describe("login request orchestration", () => {
 
     const result = await loginFromRequest({
       username: "student-001",
-      password: "NajoomScience2026",
-      networkKey: "network-a",
+      password: "ValidPassword2026",
+      networkKey: "school-network",
     });
 
     expect(result).toEqual({
@@ -218,20 +224,20 @@ describe("login request orchestration", () => {
 
     expect(
       clearLoginThrottleMock,
-    ).toHaveBeenCalledTimes(2);
-
-    expect(
-      clearLoginThrottleMock,
-    ).toHaveBeenCalledWith(
-      LoginThrottleScope.NETWORK,
-      "network-a",
-    );
+    ).toHaveBeenCalledTimes(1);
 
     expect(
       clearLoginThrottleMock,
     ).toHaveBeenCalledWith(
       LoginThrottleScope.USERNAME_NETWORK,
-      "student-001:network-a",
+      "student-001:school-network",
+    );
+
+    expect(
+      clearLoginThrottleMock,
+    ).not.toHaveBeenCalledWith(
+      LoginThrottleScope.NETWORK,
+      "school-network",
     );
   });
 
@@ -254,5 +260,16 @@ describe("login request orchestration", () => {
     expect(
       recordFailedLoginAttemptMock,
     ).not.toHaveBeenCalled();
+
+    expect(
+      clearLoginThrottleMock,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      loginWithUsernameAndPasswordMock,
+    ).toHaveBeenCalledWith(
+      "student-001",
+      "WrongPassword2026",
+    );
   });
 });

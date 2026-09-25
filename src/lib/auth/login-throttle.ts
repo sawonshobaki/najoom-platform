@@ -5,18 +5,51 @@ import { createHash } from "node:crypto";
 import { LoginThrottleScope } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
 
-/**
- * إعدادات الحماية من محاولات تسجيل الدخول المتكررة.
- *
- * النافذة الزمنية: 15 دقيقة
- * يبدأ الحظر بعد 5 محاولات فاشلة.
- * الحظر مؤقت ويزداد تدريجيًا.
- */
-const LOGIN_WINDOW_MINUTES = 15;
-const FAILURE_LIMIT = 5;
-const MAX_BLOCK_MINUTES = 30;
-
 const MILLISECONDS_PER_MINUTE = 60 * 1000;
+
+type LoginThrottlePolicy = {
+  windowMinutes: number;
+  failureLimit: number;
+  maxBlockMinutes: number;
+  fixedBlockMinutes?: number;
+};
+
+/**
+ * لكل نطاق سياسة مستقلة.
+ *
+ * USERNAME:
+ * حماية حساب بعينه من التخمين المتكرر.
+ *
+ * USERNAME_NETWORK:
+ * حماية حساب معين من مصدر شبكة واحد.
+ *
+ * NETWORK:
+ * حماية عامة من مصدر شبكي يجرّب أعدادًا كبيرة من الحسابات.
+ * الحد هنا أعلى بكثير لأن عدة طالبات قد يشتركن في نفس الشبكة.
+ */
+const LOGIN_THROTTLE_POLICIES: Record<
+  LoginThrottleScope,
+  LoginThrottlePolicy
+> = {
+  USERNAME: {
+    windowMinutes: 15,
+    failureLimit: 5,
+    maxBlockMinutes: 30,
+  },
+
+  USERNAME_NETWORK: {
+    windowMinutes: 15,
+    failureLimit: 8,
+    maxBlockMinutes: 15,
+  },
+
+  NETWORK: {
+    windowMinutes: 15,
+    failureLimit: 50,
+    maxBlockMinutes: 5,
+    fixedBlockMinutes: 5,
+  },
+};
 
 export type LoginThrottleStatus = {
   blocked: boolean;
@@ -24,10 +57,12 @@ export type LoginThrottleStatus = {
 };
 
 /**
- * نحول المعرّف الخام إلى SHA-256 hash قبل تخزينه.
+ * نحول المعرّف الخام إلى hash قبل التخزين.
  *
- * لا نخزن اسم المستخدم أو مفتاح الشبكة الخام
- * داخل جدول throttling.
+ * ملاحظة:
+ * SHA-256 يمنع تخزين القيمة الخام، لكنه لا يجعل
+ * عناوين IP منخفضة التنوع مجهولة بشكل كامل.
+ * سنستبدله لاحقًا بـ HMAC قبل تفعيل networkKey فعليًا.
  */
 export function hashThrottleIdentifier(
   identifier: string,
@@ -37,46 +72,50 @@ export function hashThrottleIdentifier(
     .digest("hex");
 }
 
-/**
- * يحسب وقت انتهاء نافذة المحاولات الحالية.
- */
+function getThrottlePolicy(
+  scope: LoginThrottleScope,
+): LoginThrottlePolicy {
+  return LOGIN_THROTTLE_POLICIES[scope];
+}
+
 function getWindowExpiration(
   windowStartedAt: Date,
+  windowMinutes: number,
 ): Date {
   return new Date(
     windowStartedAt.getTime() +
-      LOGIN_WINDOW_MINUTES * MILLISECONDS_PER_MINUTE,
+      windowMinutes * MILLISECONDS_PER_MINUTE,
   );
 }
 
 /**
- * يحسب مدة الحظر التصاعدي.
+ * USERNAME و USERNAME_NETWORK:
+ * حظر تصاعدي 1، 2، 4، 8... حتى الحد الأقصى.
  *
- * 5 failures  -> 1 minute
- * 6 failures  -> 2 minutes
- * 7 failures  -> 4 minutes
- * ...
- * بحد أقصى 30 دقيقة.
+ * NETWORK:
+ * حظر ثابت وقصير لتجنب تعطيل شبكة مشتركة لفترة طويلة.
  */
 function getBlockDurationMinutes(
   failureCount: number,
+  policy: LoginThrottlePolicy,
 ): number {
+  if (policy.fixedBlockMinutes) {
+    return policy.fixedBlockMinutes;
+  }
+
   const overflow = Math.max(
     0,
-    failureCount - FAILURE_LIMIT,
+    failureCount - policy.failureLimit,
   );
 
   const blockMinutes = 2 ** overflow;
 
   return Math.min(
     blockMinutes,
-    MAX_BLOCK_MINUTES,
+    policy.maxBlockMinutes,
   );
 }
 
-/**
- * يتحقق هل المعرّف محظور مؤقتًا.
- */
 export async function getLoginThrottleStatus(
   scope: LoginThrottleScope,
   identifier: string,
@@ -125,12 +164,6 @@ export async function getLoginThrottleStatus(
   };
 }
 
-/**
- * يسجل محاولة دخول فاشلة.
- *
- * لا يقفل الحساب نفسه.
- * إنما يطبق حظرًا مؤقتًا على هذا المفتاح فقط.
- */
 export async function recordFailedLoginAttempt(
   scope: LoginThrottleScope,
   identifier: string,
@@ -138,6 +171,7 @@ export async function recordFailedLoginAttempt(
   const identifierHash =
     hashThrottleIdentifier(identifier);
 
+  const policy = getThrottlePolicy(scope);
   const now = new Date();
 
   const existing =
@@ -150,10 +184,6 @@ export async function recordFailedLoginAttempt(
       },
     });
 
-  /**
-   * إذا لم يكن هناك سجل سابق،
-   * ننشئ نافذة جديدة.
-   */
   if (!existing) {
     await prisma.loginThrottle.create({
       data: {
@@ -171,12 +201,9 @@ export async function recordFailedLoginAttempt(
   const windowExpired =
     getWindowExpiration(
       existing.windowStartedAt,
+      policy.windowMinutes,
     ) <= now;
 
-  /**
-   * إذا انتهت النافذة السابقة،
-   * نبدأ العد من جديد.
-   */
   if (windowExpired) {
     await prisma.loginThrottle.update({
       where: {
@@ -198,10 +225,14 @@ export async function recordFailedLoginAttempt(
 
   let blockedUntil: Date | null = null;
 
-  if (nextFailureCount >= FAILURE_LIMIT) {
+  if (
+    nextFailureCount >=
+    policy.failureLimit
+  ) {
     const blockMinutes =
       getBlockDurationMinutes(
         nextFailureCount,
+        policy,
       );
 
     blockedUntil = new Date(
@@ -223,12 +254,6 @@ export async function recordFailedLoginAttempt(
   });
 }
 
-/**
- * يمسح عداد المحاولات بعد تسجيل دخول ناجح.
- *
- * هذا لا يحذف أي سجل تدقيق أمني،
- * بل فقط بيانات throttling المؤقتة.
- */
 export async function clearLoginThrottle(
   scope: LoginThrottleScope,
   identifier: string,

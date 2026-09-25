@@ -169,16 +169,10 @@ export async function loginFromRequest(
    *
    * login-service يكون قد مسح USERNAME throttle أيضًا.
    */
-  await Promise.all([
-    clearLoginThrottle(
-      LoginThrottleScope.NETWORK,
-      networkKey,
-    ),
-    clearLoginThrottle(
-      LoginThrottleScope.USERNAME_NETWORK,
-      usernameNetworkIdentifier,
-    ),
-  ]);
+await clearLoginThrottle(
+  LoginThrottleScope.USERNAME_NETWORK,
+  usernameNetworkIdentifier,
+);
 
   return result;
 }
