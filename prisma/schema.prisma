@@ -203,8 +203,6 @@ model User {
 
   sessions Session[]
 
-  sectionChanges StudentSectionHistory[] @relation("SectionChangedBy")
-
   questionsCreated  Question[] @relation("QuestionCreatedBy")
   questionsReviewed Question[] @relation("QuestionReviewedBy")
 
@@ -247,9 +245,8 @@ model Student {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentSection Section?                @relation("CurrentSection", fields: [currentSectionId], references: [id])
-  sectionHistory StudentSectionHistory[]
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentSection Section? @relation("CurrentSection", fields: [currentSectionId], references: [id])
 
   assessmentAttempts    AssessmentAttempt[]
   assignmentSubmissions AssignmentSubmission[]
@@ -306,10 +303,8 @@ model Section {
   name     String
   isActive Boolean @default(true)
 
-  grade       Grade                   @relation(fields: [gradeId], references: [id], onDelete: Restrict)
-  students    Student[]               @relation("CurrentSection")
-  historyFrom StudentSectionHistory[] @relation("FromSection")
-  historyTo   StudentSectionHistory[] @relation("ToSection")
+  grade    Grade     @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  students Student[] @relation("CurrentSection")
 
   assessments Assessment[]
   assignments Assignment[]
@@ -319,24 +314,6 @@ model Section {
 
   @@unique([gradeId, name])
   @@map("sections")
-}
-
-model StudentSectionHistory {
-  id            String   @id @default(cuid())
-  studentId     String
-  fromSectionId String?
-  toSectionId   String
-  effectiveAt   DateTime @default(now())
-  note          String?
-  changedById   String?
-
-  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  fromSection Section? @relation("FromSection", fields: [fromSectionId], references: [id], onDelete: Restrict)
-  toSection   Section  @relation("ToSection", fields: [toSectionId], references: [id], onDelete: Restrict)
-  changedBy   User?    @relation("SectionChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
-
-  @@index([studentId, effectiveAt])
-  @@map("student_section_history")
 }
 
 // ======================================================
@@ -1218,6 +1195,7 @@ model Session {
   @@index([userId, revokedAt])
   @@map("sessions")
 }
+
 enum LoginThrottleScope {
   USERNAME
   NETWORK
@@ -1229,7 +1207,7 @@ model LoginThrottle {
   scope          LoginThrottleScope
   identifierHash String
 
-  failureCount Int      @default(0)
+  failureCount    Int      @default(0)
   windowStartedAt DateTime
   lastFailureAt   DateTime?
   blockedUntil    DateTime?
