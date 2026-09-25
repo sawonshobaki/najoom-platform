@@ -340,6 +340,9 @@ export async function createStudent(
  *
  * لا يسمح بالنقل المباشر بين الشعب.
  * يجب إزالة الطالبة من شعبتها الحالية أولًا.
+ *
+ * التحديث المشروط أدناه يمنع طلبين متزامنين من
+ * تعيين الطالبة إلى شعبتين مختلفتين.
  */
 export async function addStudentToSection(
   studentId: string,
@@ -413,22 +416,125 @@ export async function addStudentToSection(
     );
   }
 
-  return prisma.student.update({
-    where: {
-      id: student.id,
-    },
-    data: {
-      currentSectionId:
-        normalizedSectionId,
-    },
-    select: {
-      id: true,
-      studentCode: true,
-      fullName: true,
-      currentSectionId: true,
-      isActive: true,
-    },
-  });
+  /**
+   * الحماية الذرية من race condition.
+   *
+   * قاعدة البيانات لن تنفذ التعيين إلا إذا كانت
+   * الطالبة ما تزال:
+   * - موجودة بهذا id
+   * - نشطة
+   * - غير مرتبطة بأي شعبة
+   *
+   * لذلك إذا وصل طلبان متزامنان لشعبتين مختلفتين،
+   * سينجح واحد فقط في تغيير currentSectionId.
+   */
+  const assignmentResult =
+    await prisma.student.updateMany({
+      where: {
+        id: student.id,
+        isActive: true,
+        currentSectionId: null,
+      },
+      data: {
+        currentSectionId:
+          normalizedSectionId,
+      },
+    });
+
+  /**
+   * تم التعيين بنجاح.
+   */
+  if (assignmentResult.count === 1) {
+    return prisma.student.findUniqueOrThrow({
+      where: {
+        id: student.id,
+      },
+      select: {
+        id: true,
+        studentCode: true,
+        fullName: true,
+        currentSectionId: true,
+        isActive: true,
+      },
+    });
+  }
+
+  /**
+   * إذا لم يتم التحديث، فقد تغيرت حالة الطالبة
+   * بين القراءة الأولى ومحاولة الكتابة.
+   *
+   * نعيد قراءة الحالة الفعلية بدل تخمين السبب.
+   */
+  const currentStudent =
+    await prisma.student.findUnique({
+      where: {
+        id: student.id,
+      },
+      select: {
+        id: true,
+        isActive: true,
+        currentSectionId: true,
+      },
+    });
+
+  if (!currentStudent) {
+    throw new StudentServiceError(
+      "student_not_found",
+    );
+  }
+
+  if (!currentStudent.isActive) {
+    throw new StudentServiceError(
+      "student_inactive",
+    );
+  }
+
+  /**
+   * ربما سبقنا طلب متزامن آخر وعيّن الطالبة
+   * إلى نفس الشعبة المطلوبة.
+   *
+   * نعامل ذلك كنجاح idempotent.
+   */
+  if (
+    currentStudent.currentSectionId ===
+    normalizedSectionId
+  ) {
+    return prisma.student.findUniqueOrThrow({
+      where: {
+        id: currentStudent.id,
+      },
+      select: {
+        id: true,
+        studentCode: true,
+        fullName: true,
+        currentSectionId: true,
+        isActive: true,
+      },
+    });
+  }
+
+  /**
+   * إذا أصبحت في شعبة مختلفة، فقد فاز طلب
+   * متزامن آخر بالتعيين.
+   *
+   * نحافظ على قاعدة منع النقل المباشر.
+   */
+  if (currentStudent.currentSectionId) {
+    throw new StudentServiceError(
+      "student_already_in_section",
+    );
+  }
+
+  /**
+   * updateMany أعاد صفرًا، لكن إعادة القراءة تقول
+   * إن الطالبة ما تزال نشطة وغير مرتبطة بشعبة.
+   *
+   * هذه ليست حالة أعمال متوقعة، لذلك لا نخفيها
+   * خلف StudentServiceError غير صحيح.
+   */
+  throw new Error(
+    "Student section assignment failed unexpectedly.",
+  );
 }
 
 /**

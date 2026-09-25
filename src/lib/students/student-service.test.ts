@@ -19,6 +19,7 @@ const {
   studentCountMock,
   studentCreateMock,
   studentUpdateMock,
+  studentUpdateManyMock,
   sectionFindUniqueMock,
   sessionUpdateManyMock,
   transactionMock,
@@ -33,6 +34,7 @@ const {
   studentCountMock: vi.fn(),
   studentCreateMock: vi.fn(),
   studentUpdateMock: vi.fn(),
+  studentUpdateManyMock: vi.fn(),
   sectionFindUniqueMock: vi.fn(),
   sessionUpdateManyMock: vi.fn(),
   transactionMock: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock("@/lib/db/prisma", () => ({
       findMany: studentFindManyMock,
       count: studentCountMock,
       update: studentUpdateMock,
+      updateMany: studentUpdateManyMock,
     },
     section: {
       findUnique: sectionFindUniqueMock,
@@ -428,7 +431,7 @@ describe("student service", () => {
     ).rejects.toBe(databaseError);
   });
 
-  it("adds an unassigned active student to an active section", async () => {
+  it("atomically adds an unassigned active student to an active section", async () => {
     sectionFindUniqueMock.mockResolvedValue({
       id: "section-2",
       isActive: true,
@@ -440,7 +443,11 @@ describe("student service", () => {
       currentSectionId: null,
     });
 
-    studentUpdateMock.mockResolvedValue({
+    studentUpdateManyMock.mockResolvedValue({
+      count: 1,
+    });
+
+    studentFindUniqueOrThrowMock.mockResolvedValue({
       id: "student-1",
       studentCode: "ST-0001",
       fullName: "طالبة تجريبية",
@@ -455,14 +462,28 @@ describe("student service", () => {
       );
 
     expect(
-      studentUpdateMock,
+      studentUpdateManyMock,
     ).toHaveBeenCalledWith({
       where: {
         id: "student-1",
+        isActive: true,
+        currentSectionId: null,
       },
       data: {
         currentSectionId:
           "section-2",
+      },
+    });
+
+    expect(
+      studentUpdateMock,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      studentFindUniqueOrThrowMock,
+    ).toHaveBeenCalledWith({
+      where: {
+        id: "student-1",
       },
       select: {
         id: true,
@@ -501,6 +522,10 @@ describe("student service", () => {
     });
 
     expect(
+      studentUpdateManyMock,
+    ).not.toHaveBeenCalled();
+
+    expect(
       studentUpdateMock,
     ).not.toHaveBeenCalled();
   });
@@ -530,6 +555,10 @@ describe("student service", () => {
         "student-1",
         "section-1",
       );
+
+    expect(
+      studentUpdateManyMock,
+    ).not.toHaveBeenCalled();
 
     expect(
       studentUpdateMock,
@@ -566,8 +595,188 @@ describe("student service", () => {
     });
 
     expect(
-      studentUpdateMock,
+      studentUpdateManyMock,
     ).not.toHaveBeenCalled();
+  });
+
+  it("treats a concurrent assignment to the same section as idempotent success", async () => {
+    sectionFindUniqueMock.mockResolvedValue({
+      id: "section-2",
+      isActive: true,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    studentUpdateManyMock.mockResolvedValue({
+      count: 0,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: "section-2",
+    });
+
+    studentFindUniqueOrThrowMock.mockResolvedValue({
+      id: "student-1",
+      studentCode: "ST-0001",
+      fullName: "طالبة تجريبية",
+      currentSectionId: "section-2",
+      isActive: true,
+    });
+
+    const result =
+      await addStudentToSection(
+        "student-1",
+        "section-2",
+      );
+
+    expect(
+      studentUpdateManyMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      result.currentSectionId,
+    ).toBe("section-2");
+  });
+
+  it("prevents a concurrent assignment from becoming a direct transfer", async () => {
+    sectionFindUniqueMock.mockResolvedValue({
+      id: "section-2",
+      isActive: true,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    studentUpdateManyMock.mockResolvedValue({
+      count: 0,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: "section-3",
+    });
+
+    await expect(
+      addStudentToSection(
+        "student-1",
+        "section-2",
+      ),
+    ).rejects.toMatchObject({
+      code:
+        "student_already_in_section",
+    });
+
+    expect(
+      studentUpdateManyMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      studentFindUniqueOrThrowMock,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("reports when the student becomes inactive during section assignment", async () => {
+    sectionFindUniqueMock.mockResolvedValue({
+      id: "section-2",
+      isActive: true,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    studentUpdateManyMock.mockResolvedValue({
+      count: 0,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: false,
+      currentSectionId: null,
+    });
+
+    await expect(
+      addStudentToSection(
+        "student-1",
+        "section-2",
+      ),
+    ).rejects.toMatchObject({
+      code: "student_inactive",
+    });
+  });
+
+  it("reports when the student disappears during section assignment", async () => {
+    sectionFindUniqueMock.mockResolvedValue({
+      id: "section-2",
+      isActive: true,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    studentUpdateManyMock.mockResolvedValue({
+      count: 0,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce(
+      null,
+    );
+
+    await expect(
+      addStudentToSection(
+        "student-1",
+        "section-2",
+      ),
+    ).rejects.toMatchObject({
+      code: "student_not_found",
+    });
+  });
+
+  it("does not hide an unexpected failed conditional assignment", async () => {
+    sectionFindUniqueMock.mockResolvedValue({
+      id: "section-2",
+      isActive: true,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    studentUpdateManyMock.mockResolvedValue({
+      count: 0,
+    });
+
+    studentFindUniqueMock.mockResolvedValueOnce({
+      id: "student-1",
+      isActive: true,
+      currentSectionId: null,
+    });
+
+    await expect(
+      addStudentToSection(
+        "student-1",
+        "section-2",
+      ),
+    ).rejects.toThrow(
+      "Student section assignment failed unexpectedly.",
+    );
   });
 
   it("removes a student from the current section without deleting the student", async () => {
