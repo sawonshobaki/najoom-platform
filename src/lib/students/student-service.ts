@@ -1,6 +1,9 @@
 import "server-only";
 
-import { UserRole } from "@/generated/prisma/client";
+import {
+  Prisma,
+  UserRole,
+} from "@/generated/prisma/client";
 
 import { hashPassword } from "@/lib/auth/password";
 import { prisma } from "@/lib/db/prisma";
@@ -13,6 +16,7 @@ export type StudentServiceErrorCode =
   | "invalid_username"
   | "invalid_student_code"
   | "invalid_full_name"
+  | "invalid_student_list_query"
   | "username_already_exists"
   | "student_code_already_exists"
   | "section_not_found"
@@ -36,6 +40,22 @@ export type CreateStudentInput = {
   studentCode: string;
   fullName: string;
   sectionId?: string | null;
+};
+
+export type ListStudentsInput = {
+  gradeId?: string;
+
+  /**
+   * string = شعبة محددة
+   * null = طالبات غير مرتبطات بأي شعبة
+   * undefined = كل الشعب
+   */
+  sectionId?: string | null;
+
+  isActive?: boolean;
+  search?: string;
+  page?: number;
+  pageSize?: number;
 };
 
 function normalizeUsername(
@@ -88,6 +108,28 @@ function validateStudentIdentity(input: {
       "invalid_full_name",
     );
   }
+}
+
+/**
+ * يفحص أخطاء Prisma بدون الاعتماد على الشكل الداخلي
+ * الكامل للخطأ.
+ *
+ * نستخدمه لمعالجة تعارضات UNIQUE التي قد تظهر
+ * عند وصول طلبين متزامنين.
+ */
+function isPrismaErrorWithCode(
+  error: unknown,
+  code: string,
+): boolean {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("code" in error)
+  ) {
+    return false;
+  }
+
+  return error.code === code;
 }
 
 /**
@@ -151,7 +193,7 @@ export async function createStudent(
 
   /**
    * ننفذ Argon2 قبل فتح transaction حتى لا نبقي
-   * اتصال قاعدة البيانات مشغولًا أثناء عملية hashing المكلفة.
+   * اتصال قاعدة البيانات مشغولًا أثناء hashing.
    */
   const passwordHash = await hashPassword(
     input.password,
@@ -165,8 +207,10 @@ export async function createStudent(
   }
 
   /**
-   * الفحص المبكر يعطي أخطاء أوضح للمستخدم.
-   * القيود الفريدة في قاعدة البيانات تظل خط الدفاع النهائي.
+   * الفحص المبكر يعطي أخطاء أوضح في الحالة العادية.
+   *
+   * لكنه لا يكفي وحده لمنع race condition، لذلك تبقى
+   * قيود UNIQUE في قاعدة البيانات خط الدفاع النهائي.
    */
   const [existingUser, existingStudent] =
     await Promise.all([
@@ -203,8 +247,13 @@ export async function createStudent(
 
   return prisma.$transaction(
     async (transaction) => {
-      const user =
-        await transaction.user.create({
+      let user: {
+        id: string;
+        username: string;
+      };
+
+      try {
+        user = await transaction.user.create({
           data: {
             username,
             passwordHash,
@@ -216,31 +265,72 @@ export async function createStudent(
             username: true,
           },
         });
+      } catch (error) {
+        /**
+         * قد ينجح الفحص المبكر في طلبين متزامنين.
+         *
+         * إذا سبق طلب آخر هذا الطلب وأنشأ username نفسه،
+         * يحول P2002 إلى خطأ خدمة واضح بدل تسريب خطأ Prisma.
+         */
+        if (
+          isPrismaErrorWithCode(
+            error,
+            "P2002",
+          )
+        ) {
+          throw new StudentServiceError(
+            "username_already_exists",
+          );
+        }
 
-      return transaction.student.create({
-        data: {
-          userId: user.id,
-          studentCode,
-          fullName,
-          currentSectionId: sectionId,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          studentCode: true,
-          fullName: true,
-          currentSectionId: true,
-          isActive: true,
-          user: {
-            select: {
-              id: true,
-              username: true,
-              role: true,
-              isActive: true,
+        throw error;
+      }
+
+      try {
+        return await transaction.student.create({
+          data: {
+            userId: user.id,
+            studentCode,
+            fullName,
+            currentSectionId: sectionId,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            studentCode: true,
+            fullName: true,
+            currentSectionId: true,
+            isActive: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+                role: true,
+                isActive: true,
+              },
             },
           },
-        },
-      });
+        });
+      } catch (error) {
+        /**
+         * نفس الحماية السابقة، ولكن لقيد studentCode.
+         *
+         * transaction ستتراجع بالكامل عند الخطأ،
+         * وبالتالي لن يبقى User بدون Student.
+         */
+        if (
+          isPrismaErrorWithCode(
+            error,
+            "P2002",
+          )
+        ) {
+          throw new StudentServiceError(
+            "student_code_already_exists",
+          );
+        }
+
+        throw error;
+      }
     },
   );
 }
@@ -249,7 +339,7 @@ export async function createStudent(
  * يضيف طالبة غير مرتبطة حاليًا بشعبة إلى شعبة مفعلة.
  *
  * لا يسمح بالنقل المباشر بين الشعب.
- * إذا كانت الطالبة في شعبة أخرى، يجب إزالتها أولًا.
+ * يجب إزالة الطالبة من شعبتها الحالية أولًا.
  */
 export async function addStudentToSection(
   studentId: string,
@@ -294,7 +384,7 @@ export async function addStudentToSection(
 
   /**
    * إذا كانت في نفس الشعبة بالفعل،
-   * نعتبر العملية ناجحة بدون كتابة غير ضرورية.
+   * لا ننفذ تحديثًا غير ضروري.
    */
   if (
     student.currentSectionId ===
@@ -315,11 +405,7 @@ export async function addStudentToSection(
   }
 
   /**
-   * القرار الحالي للمنصة:
    * لا يوجد نقل مباشر بين الشعب.
-   *
-   * يجب إزالة الطالبة من شعبتها الحالية أولًا،
-   * ثم إضافتها إلى الشعبة الأخرى كعملية منفصلة.
    */
   if (student.currentSectionId) {
     throw new StudentServiceError(
@@ -348,13 +434,7 @@ export async function addStudentToSection(
 /**
  * يزيل الطالبة من شعبتها الحالية فقط.
  *
- * لا يحذف:
- * - حساب الطالبة
- * - ملف الطالبة
- * - نتائجها
- * - واجباتها
- * - نقاطها
- * - بياناتها التعليمية
+ * لا يحذف الحساب أو الملف الدراسي أو النتائج.
  */
 export async function removeStudentFromSection(
   studentId: string,
@@ -376,10 +456,6 @@ export async function removeStudentFromSection(
     );
   }
 
-  /**
-   * إذا لم تكن مرتبطة بشعبة أصلًا،
-   * نعيد حالتها الحالية بدون تحديث غير ضروري.
-   */
   if (!student.currentSectionId) {
     return prisma.student.findUniqueOrThrow({
       where: {
@@ -413,14 +489,9 @@ export async function removeStudentFromSection(
 }
 
 /**
- * يغيّر حالة الطالبة وحساب المستخدم معًا.
+ * يغيّر حالة Student وUser معًا.
  *
- * لا نسمح بأن تكون Student مفعلة بينما User معطل،
- * أو العكس.
- *
- * عند التعطيل نلغي كل الجلسات الحالية أيضًا.
- * هذا يمنع جلسة قديمة من العودة للعمل إذا أُعيد
- * تفعيل الحساب لاحقًا.
+ * عند تعطيل الحساب تلغى الجلسات النشطة أيضًا.
  */
 export async function setStudentActiveState(
   studentId: string,
@@ -450,8 +521,8 @@ export async function setStudentActiveState(
   }
 
   /**
-   * إذا كانت الحالتان متطابقتين أصلًا مع المطلوب،
-   * لا ننفذ كتابات جديدة.
+   * لا نكتب إلى قاعدة البيانات إذا كانت
+   * الحالتان مطابقتين أصلًا للقيمة المطلوبة.
    */
   if (
     student.isActive === isActive &&
@@ -518,10 +589,7 @@ export async function setStudentActiveState(
         });
 
       /**
-       * التعطيل يلغي الجلسات النشطة.
-       *
-       * الجلسات الملغاة لا نعيد تفعيلها لاحقًا،
-       * حتى إذا أُعيد تفعيل حساب الطالبة.
+       * الجلسات القديمة لا تعاد عند إعادة تفعيل الحساب.
        */
       if (!isActive) {
         await transaction.session.updateMany({
@@ -543,7 +611,7 @@ export async function setStudentActiveState(
 }
 
 /**
- * واجهة واضحة لتعطيل الطالبة.
+ * يعطل الطالبة وحسابها.
  */
 export function deactivateStudent(
   studentId: string,
@@ -555,10 +623,9 @@ export function deactivateStudent(
 }
 
 /**
- * واجهة واضحة لإعادة تفعيل الطالبة.
+ * يعيد تفعيل الطالبة.
  *
- * لا تعيد الجلسات القديمة التي تم إلغاؤها.
- * تحتاج الطالبة إلى تسجيل دخول جديد.
+ * الجلسات القديمة الملغاة لا تعاد.
  */
 export function activateStudent(
   studentId: string,
@@ -567,4 +634,179 @@ export function activateStudent(
     studentId,
     true,
   );
+}
+
+/**
+ * يجلب الطالبات لقائمة الإدارة مع الفلاتر
+ * والترقيم بالصفحات.
+ */
+export async function listStudents(
+  input: ListStudentsInput = {},
+) {
+  const page = input.page ?? 1;
+  const pageSize = input.pageSize ?? 25;
+
+  if (
+    !Number.isInteger(page) ||
+    page < 1 ||
+    !Number.isInteger(pageSize) ||
+    pageSize < 1 ||
+    pageSize > 100
+  ) {
+    throw new StudentServiceError(
+      "invalid_student_list_query",
+    );
+  }
+
+  const gradeId = input.gradeId?.trim();
+  const search = input.search?.trim();
+
+  if (
+    gradeId !== undefined &&
+    gradeId.length === 0
+  ) {
+    throw new StudentServiceError(
+      "invalid_student_list_query",
+    );
+  }
+
+  if (
+    typeof input.sectionId === "string" &&
+    input.sectionId.trim().length === 0
+  ) {
+    throw new StudentServiceError(
+      "invalid_student_list_query",
+    );
+  }
+
+  if (search && search.length > 100) {
+    throw new StudentServiceError(
+      "invalid_student_list_query",
+    );
+  }
+
+  const sectionId =
+    typeof input.sectionId === "string"
+      ? input.sectionId.trim()
+      : input.sectionId;
+
+  const where: Prisma.StudentWhereInput = {};
+
+  if (input.isActive !== undefined) {
+    where.isActive = input.isActive;
+  }
+
+  /**
+   * null تعني الطالبات غير المرتبطات بأي شعبة.
+   */
+  if (sectionId === null) {
+    where.currentSectionId = null;
+  } else if (sectionId) {
+    where.currentSectionId = sectionId;
+  }
+
+  /**
+   * الصف مشتق من الشعبة الحالية.
+   *
+   * الطالبة غير المرتبطة بشعبة لا تظهر
+   * داخل فلتر صف محدد.
+   */
+  if (gradeId) {
+    where.currentSection = {
+      is: {
+        gradeId,
+      },
+    };
+  }
+
+  if (search) {
+    where.OR = [
+      {
+        fullName: {
+          contains: search,
+          mode: "insensitive",
+        },
+      },
+      {
+        studentCode: {
+          contains: search,
+          mode: "insensitive",
+        },
+      },
+      {
+        user: {
+          username: {
+            contains: search,
+            mode: "insensitive",
+          },
+        },
+      },
+    ];
+  }
+
+  const skip = (page - 1) * pageSize;
+
+  const [students, totalCount] =
+    await Promise.all([
+      prisma.student.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: [
+          {
+            fullName: "asc",
+          },
+          {
+            studentCode: "asc",
+          },
+        ],
+        select: {
+          id: true,
+          studentCode: true,
+          fullName: true,
+          isActive: true,
+          currentSectionId: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              isActive: true,
+            },
+          },
+          currentSection: {
+            select: {
+              id: true,
+              name: true,
+              isActive: true,
+              grade: {
+                select: {
+                  id: true,
+                  name: true,
+                  sortOrder: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+
+      prisma.student.count({
+        where,
+      }),
+    ]);
+
+  return {
+    students,
+    pagination: {
+      page,
+      pageSize,
+      totalCount,
+      totalPages:
+        totalCount === 0
+          ? 0
+          : Math.ceil(
+              totalCount / pageSize,
+            ),
+    },
+  };
 }

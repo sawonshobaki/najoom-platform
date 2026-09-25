@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { UserRole } from "@/generated/prisma/client";
 
@@ -9,6 +15,8 @@ const {
   userUpdateMock,
   studentFindUniqueMock,
   studentFindUniqueOrThrowMock,
+  studentFindManyMock,
+  studentCountMock,
   studentCreateMock,
   studentUpdateMock,
   sectionFindUniqueMock,
@@ -21,6 +29,8 @@ const {
   userUpdateMock: vi.fn(),
   studentFindUniqueMock: vi.fn(),
   studentFindUniqueOrThrowMock: vi.fn(),
+  studentFindManyMock: vi.fn(),
+  studentCountMock: vi.fn(),
   studentCreateMock: vi.fn(),
   studentUpdateMock: vi.fn(),
   sectionFindUniqueMock: vi.fn(),
@@ -39,7 +49,10 @@ vi.mock("@/lib/db/prisma", () => ({
     },
     student: {
       findUnique: studentFindUniqueMock,
-      findUniqueOrThrow: studentFindUniqueOrThrowMock,
+      findUniqueOrThrow:
+        studentFindUniqueOrThrowMock,
+      findMany: studentFindManyMock,
+      count: studentCountMock,
       update: studentUpdateMock,
     },
     section: {
@@ -55,6 +68,7 @@ import {
   addStudentToSection,
   createStudent,
   deactivateStudent,
+  listStudents,
   removeStudentFromSection,
   setStudentActiveState,
 } from "@/lib/students/student-service";
@@ -66,6 +80,9 @@ describe("student service", () => {
     hashPasswordMock.mockResolvedValue(
       "hashed-password",
     );
+
+    studentFindManyMock.mockResolvedValue([]);
+    studentCountMock.mockResolvedValue(0);
 
     transactionMock.mockImplementation(
       async (callback) =>
@@ -115,36 +132,48 @@ describe("student service", () => {
       fullName: "  طالبة تجريبية  ",
     });
 
-    expect(hashPasswordMock).toHaveBeenCalledWith(
+    expect(
+      hashPasswordMock,
+    ).toHaveBeenCalledWith(
       "ValidPassword2026",
     );
 
-    expect(transactionMock).toHaveBeenCalledOnce();
+    expect(
+      transactionMock,
+    ).toHaveBeenCalledOnce();
 
-    expect(userCreateMock).toHaveBeenCalledWith(
+    expect(
+      userCreateMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
           username: "student-001",
-          passwordHash: "hashed-password",
+          passwordHash:
+            "hashed-password",
           role: UserRole.STUDENT,
           isActive: true,
         },
       }),
     );
 
-    expect(studentCreateMock).toHaveBeenCalledWith(
+    expect(
+      studentCreateMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
           userId: "user-1",
           studentCode: "ST-0001",
-          fullName: "طالبة تجريبية",
+          fullName:
+            "طالبة تجريبية",
           currentSectionId: null,
           isActive: true,
         },
       }),
     );
 
-    expect(result.id).toBe("student-1");
+    expect(result.id).toBe(
+      "student-1",
+    );
   });
 
   it("creates a student in an active section", async () => {
@@ -183,7 +212,9 @@ describe("student service", () => {
       sectionId: "section-1",
     });
 
-    expect(sectionFindUniqueMock).toHaveBeenCalledWith({
+    expect(
+      sectionFindUniqueMock,
+    ).toHaveBeenCalledWith({
       where: {
         id: "section-1",
       },
@@ -193,10 +224,13 @@ describe("student service", () => {
       },
     });
 
-    expect(studentCreateMock).toHaveBeenCalledWith(
+    expect(
+      studentCreateMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          currentSectionId: "section-1",
+          currentSectionId:
+            "section-1",
         }),
       }),
     );
@@ -211,7 +245,8 @@ describe("student service", () => {
     await expect(
       createStudent({
         username: "student-001",
-        password: "ValidPassword2026",
+        password:
+          "ValidPassword2026",
         studentCode: "ST-0001",
         fullName: "طالبة تجريبية",
         sectionId: "section-1",
@@ -220,10 +255,12 @@ describe("student service", () => {
       code: "section_inactive",
     });
 
-    expect(transactionMock).not.toHaveBeenCalled();
+    expect(
+      transactionMock,
+    ).not.toHaveBeenCalled();
   });
 
-  it("rejects duplicate usernames", async () => {
+  it("rejects duplicate usernames during the early check", async () => {
     userFindUniqueMock.mockResolvedValue({
       id: "existing-user",
     });
@@ -233,7 +270,8 @@ describe("student service", () => {
     await expect(
       createStudent({
         username: "student-001",
-        password: "ValidPassword2026",
+        password:
+          "ValidPassword2026",
         studentCode: "ST-0001",
         fullName: "طالبة تجريبية",
       }),
@@ -241,10 +279,12 @@ describe("student service", () => {
       code: "username_already_exists",
     });
 
-    expect(transactionMock).not.toHaveBeenCalled();
+    expect(
+      transactionMock,
+    ).not.toHaveBeenCalled();
   });
 
-  it("rejects duplicate student codes", async () => {
+  it("rejects duplicate student codes during the early check", async () => {
     userFindUniqueMock.mockResolvedValue(null);
 
     studentFindUniqueMock.mockResolvedValue({
@@ -254,15 +294,138 @@ describe("student service", () => {
     await expect(
       createStudent({
         username: "student-001",
-        password: "ValidPassword2026",
+        password:
+          "ValidPassword2026",
         studentCode: "ST-0001",
         fullName: "طالبة تجريبية",
       }),
     ).rejects.toMatchObject({
-      code: "student_code_already_exists",
+      code:
+        "student_code_already_exists",
     });
 
-    expect(transactionMock).not.toHaveBeenCalled();
+    expect(
+      transactionMock,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("maps a concurrent username unique conflict to a service error", async () => {
+    userFindUniqueMock.mockResolvedValue(null);
+    studentFindUniqueMock.mockResolvedValue(null);
+
+    userCreateMock.mockRejectedValue({
+      code: "P2002",
+    });
+
+    await expect(
+      createStudent({
+        username: "student-001",
+        password:
+          "ValidPassword2026",
+        studentCode: "ST-0001",
+        fullName: "طالبة تجريبية",
+      }),
+    ).rejects.toMatchObject({
+      code: "username_already_exists",
+    });
+
+    expect(
+      transactionMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      studentCreateMock,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("maps a concurrent student code unique conflict to a service error", async () => {
+    userFindUniqueMock.mockResolvedValue(null);
+    studentFindUniqueMock.mockResolvedValue(null);
+
+    userCreateMock.mockResolvedValue({
+      id: "user-1",
+      username: "student-001",
+    });
+
+    studentCreateMock.mockRejectedValue({
+      code: "P2002",
+    });
+
+    await expect(
+      createStudent({
+        username: "student-001",
+        password:
+          "ValidPassword2026",
+        studentCode: "ST-0001",
+        fullName: "طالبة تجريبية",
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "student_code_already_exists",
+    });
+
+    expect(
+      transactionMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      userCreateMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(
+      studentCreateMock,
+    ).toHaveBeenCalledOnce();
+  });
+
+  it("does not hide unexpected database errors during user creation", async () => {
+    userFindUniqueMock.mockResolvedValue(null);
+    studentFindUniqueMock.mockResolvedValue(null);
+
+    const databaseError = new Error(
+      "unexpected database error",
+    );
+
+    userCreateMock.mockRejectedValue(
+      databaseError,
+    );
+
+    await expect(
+      createStudent({
+        username: "student-001",
+        password:
+          "ValidPassword2026",
+        studentCode: "ST-0001",
+        fullName: "طالبة تجريبية",
+      }),
+    ).rejects.toBe(databaseError);
+  });
+
+  it("does not hide unexpected database errors during student creation", async () => {
+    userFindUniqueMock.mockResolvedValue(null);
+    studentFindUniqueMock.mockResolvedValue(null);
+
+    userCreateMock.mockResolvedValue({
+      id: "user-1",
+      username: "student-001",
+    });
+
+    const databaseError = new Error(
+      "unexpected database error",
+    );
+
+    studentCreateMock.mockRejectedValue(
+      databaseError,
+    );
+
+    await expect(
+      createStudent({
+        username: "student-001",
+        password:
+          "ValidPassword2026",
+        studentCode: "ST-0001",
+        fullName: "طالبة تجريبية",
+      }),
+    ).rejects.toBe(databaseError);
   });
 
   it("adds an unassigned active student to an active section", async () => {
@@ -285,17 +448,21 @@ describe("student service", () => {
       isActive: true,
     });
 
-    const result = await addStudentToSection(
-      "student-1",
-      "section-2",
-    );
+    const result =
+      await addStudentToSection(
+        "student-1",
+        "section-2",
+      );
 
-    expect(studentUpdateMock).toHaveBeenCalledWith({
+    expect(
+      studentUpdateMock,
+    ).toHaveBeenCalledWith({
       where: {
         id: "student-1",
       },
       data: {
-        currentSectionId: "section-2",
+        currentSectionId:
+          "section-2",
       },
       select: {
         id: true,
@@ -306,9 +473,9 @@ describe("student service", () => {
       },
     });
 
-    expect(result.currentSectionId).toBe(
-      "section-2",
-    );
+    expect(
+      result.currentSectionId,
+    ).toBe("section-2");
   });
 
   it("prevents direct transfer between sections", async () => {
@@ -329,10 +496,13 @@ describe("student service", () => {
         "section-2",
       ),
     ).rejects.toMatchObject({
-      code: "student_already_in_section",
+      code:
+        "student_already_in_section",
     });
 
-    expect(studentUpdateMock).not.toHaveBeenCalled();
+    expect(
+      studentUpdateMock,
+    ).not.toHaveBeenCalled();
   });
 
   it("does not rewrite the student when already in the same section", async () => {
@@ -355,20 +525,23 @@ describe("student service", () => {
       isActive: true,
     });
 
-    const result = await addStudentToSection(
-      "student-1",
-      "section-1",
-    );
+    const result =
+      await addStudentToSection(
+        "student-1",
+        "section-1",
+      );
 
-    expect(studentUpdateMock).not.toHaveBeenCalled();
+    expect(
+      studentUpdateMock,
+    ).not.toHaveBeenCalled();
 
     expect(
       studentFindUniqueOrThrowMock,
     ).toHaveBeenCalledOnce();
 
-    expect(result.currentSectionId).toBe(
-      "section-1",
-    );
+    expect(
+      result.currentSectionId,
+    ).toBe("section-1");
   });
 
   it("rejects adding an inactive student to a section", async () => {
@@ -392,7 +565,9 @@ describe("student service", () => {
       code: "student_inactive",
     });
 
-    expect(studentUpdateMock).not.toHaveBeenCalled();
+    expect(
+      studentUpdateMock,
+    ).not.toHaveBeenCalled();
   });
 
   it("removes a student from the current section without deleting the student", async () => {
@@ -414,7 +589,9 @@ describe("student service", () => {
         "student-1",
       );
 
-    expect(studentUpdateMock).toHaveBeenCalledWith({
+    expect(
+      studentUpdateMock,
+    ).toHaveBeenCalledWith({
       where: {
         id: "student-1",
       },
@@ -430,7 +607,9 @@ describe("student service", () => {
       },
     });
 
-    expect(result.currentSectionId).toBeNull();
+    expect(
+      result.currentSectionId,
+    ).toBeNull();
   });
 
   it("does not rewrite a student who is already unassigned", async () => {
@@ -451,7 +630,9 @@ describe("student service", () => {
       "student-1",
     );
 
-    expect(studentUpdateMock).not.toHaveBeenCalled();
+    expect(
+      studentUpdateMock,
+    ).not.toHaveBeenCalled();
 
     expect(
       studentFindUniqueOrThrowMock,
@@ -503,13 +684,18 @@ describe("student service", () => {
       count: 2,
     });
 
-    const result = await deactivateStudent(
-      "student-1",
-    );
+    const result =
+      await deactivateStudent(
+        "student-1",
+      );
 
-    expect(transactionMock).toHaveBeenCalledOnce();
+    expect(
+      transactionMock,
+    ).toHaveBeenCalledOnce();
 
-    expect(userUpdateMock).toHaveBeenCalledWith({
+    expect(
+      userUpdateMock,
+    ).toHaveBeenCalledWith({
       where: {
         id: "user-1",
       },
@@ -518,7 +704,9 @@ describe("student service", () => {
       },
     });
 
-    expect(studentUpdateMock).toHaveBeenCalledWith(
+    expect(
+      studentUpdateMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           id: "student-1",
@@ -529,18 +717,24 @@ describe("student service", () => {
       }),
     );
 
-    expect(sessionUpdateManyMock).toHaveBeenCalledWith({
+    expect(
+      sessionUpdateManyMock,
+    ).toHaveBeenCalledWith({
       where: {
         userId: "user-1",
         revokedAt: null,
       },
       data: {
-        revokedAt: expect.any(Date),
-        revokeReason: "student_deactivated",
+        revokedAt:
+          expect.any(Date),
+        revokeReason:
+          "student_deactivated",
       },
     });
 
-    expect(result.isActive).toBe(false);
+    expect(result.isActive).toBe(
+      false,
+    );
   });
 
   it("activates the student and user without restoring old sessions", async () => {
@@ -572,11 +766,14 @@ describe("student service", () => {
       },
     });
 
-    const result = await activateStudent(
-      "student-1",
-    );
+    const result =
+      await activateStudent(
+        "student-1",
+      );
 
-    expect(userUpdateMock).toHaveBeenCalledWith({
+    expect(
+      userUpdateMock,
+    ).toHaveBeenCalledWith({
       where: {
         id: "user-1",
       },
@@ -585,7 +782,9 @@ describe("student service", () => {
       },
     });
 
-    expect(studentUpdateMock).toHaveBeenCalledWith(
+    expect(
+      studentUpdateMock,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
           isActive: true,
@@ -593,9 +792,13 @@ describe("student service", () => {
       }),
     );
 
-    expect(sessionUpdateManyMock).not.toHaveBeenCalled();
+    expect(
+      sessionUpdateManyMock,
+    ).not.toHaveBeenCalled();
 
-    expect(result.isActive).toBe(true);
+    expect(result.isActive).toBe(
+      true,
+    );
   });
 
   it("does not open a transaction when the active state already matches", async () => {
@@ -622,18 +825,23 @@ describe("student service", () => {
       },
     });
 
-    const result = await setStudentActiveState(
-      "student-1",
-      true,
-    );
+    const result =
+      await setStudentActiveState(
+        "student-1",
+        true,
+      );
 
-    expect(transactionMock).not.toHaveBeenCalled();
+    expect(
+      transactionMock,
+    ).not.toHaveBeenCalled();
 
     expect(
       studentFindUniqueOrThrowMock,
     ).toHaveBeenCalledOnce();
 
-    expect(result.isActive).toBe(true);
+    expect(result.isActive).toBe(
+      true,
+    );
   });
 
   it("throws when changing active state for a missing student", async () => {
@@ -648,6 +856,268 @@ describe("student service", () => {
       code: "student_not_found",
     });
 
-    expect(transactionMock).not.toHaveBeenCalled();
+    expect(
+      transactionMock,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("lists students with default pagination", async () => {
+    studentFindManyMock.mockResolvedValue([
+      {
+        id: "student-1",
+        studentCode: "ST-0001",
+        fullName: "طالبة تجريبية",
+        isActive: true,
+        currentSectionId: "section-1",
+        user: {
+          id: "user-1",
+          username: "student-001",
+          isActive: true,
+        },
+        currentSection: {
+          id: "section-1",
+          name: "أ",
+          isActive: true,
+          grade: {
+            id: "grade-5",
+            name: "الصف الخامس",
+            sortOrder: 5,
+          },
+        },
+      },
+    ]);
+
+    studentCountMock.mockResolvedValue(1);
+
+    const result = await listStudents();
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {},
+        skip: 0,
+        take: 25,
+      }),
+    );
+
+    expect(
+      studentCountMock,
+    ).toHaveBeenCalledWith({
+      where: {},
+    });
+
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      totalCount: 1,
+      totalPages: 1,
+    });
+
+    expect(result.students).toHaveLength(1);
+  });
+
+  it("applies grade filter", async () => {
+    await listStudents({
+      gradeId: " grade-5 ",
+    });
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          currentSection: {
+            is: {
+              gradeId: "grade-5",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(
+      studentCountMock,
+    ).toHaveBeenCalledWith({
+      where: {
+        currentSection: {
+          is: {
+            gradeId: "grade-5",
+          },
+        },
+      },
+    });
+  });
+
+  it("applies section and active state filters", async () => {
+    await listStudents({
+      sectionId: " section-1 ",
+      isActive: false,
+    });
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          isActive: false,
+          currentSectionId:
+            "section-1",
+        },
+      }),
+    );
+  });
+
+  it("lists students without a section when sectionId is null", async () => {
+    await listStudents({
+      sectionId: null,
+    });
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          currentSectionId: null,
+        },
+      }),
+    );
+  });
+
+  it("searches by name, student code, or username", async () => {
+    await listStudents({
+      search: "  نجوم  ",
+    });
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            {
+              fullName: {
+                contains: "نجوم",
+                mode: "insensitive",
+              },
+            },
+            {
+              studentCode: {
+                contains: "نجوم",
+                mode: "insensitive",
+              },
+            },
+            {
+              user: {
+                username: {
+                  contains: "نجوم",
+                  mode: "insensitive",
+                },
+              },
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("uses requested pagination values", async () => {
+    studentCountMock.mockResolvedValue(51);
+
+    const result = await listStudents({
+      page: 3,
+      pageSize: 20,
+    });
+
+    expect(
+      studentFindManyMock,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 40,
+        take: 20,
+      }),
+    );
+
+    expect(result.pagination).toEqual({
+      page: 3,
+      pageSize: 20,
+      totalCount: 51,
+      totalPages: 3,
+    });
+  });
+
+  it("returns zero total pages when there are no students", async () => {
+    studentFindManyMock.mockResolvedValue([]);
+    studentCountMock.mockResolvedValue(0);
+
+    const result = await listStudents();
+
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      totalCount: 0,
+      totalPages: 0,
+    });
+
+    expect(result.students).toEqual([]);
+  });
+
+  it("rejects invalid pagination", async () => {
+    await expect(
+      listStudents({
+        page: 0,
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "invalid_student_list_query",
+    });
+
+    await expect(
+      listStudents({
+        pageSize: 101,
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "invalid_student_list_query",
+    });
+
+    expect(
+      studentFindManyMock,
+    ).not.toHaveBeenCalled();
+
+    expect(
+      studentCountMock,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid empty grade or section filters", async () => {
+    await expect(
+      listStudents({
+        gradeId: "   ",
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "invalid_student_list_query",
+    });
+
+    await expect(
+      listStudents({
+        sectionId: "   ",
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "invalid_student_list_query",
+    });
+  });
+
+  it("rejects an excessively long search query", async () => {
+    await expect(
+      listStudents({
+        search: "a".repeat(101),
+      }),
+    ).rejects.toMatchObject({
+      code:
+        "invalid_student_list_query",
+    });
   });
 });
