@@ -54,7 +54,7 @@ export function LoginForm() {
         return;
       }
 
-      router.replace("/");
+      router.replace("/dashboard"); 
       router.refresh();
     } catch {
       setErrorMessage(
