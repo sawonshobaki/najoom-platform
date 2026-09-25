@@ -1,3 +1,5 @@
+import { LogoutButton } from "./logout-button";
+
 export default function AdminHomePage() {
   return (
     <main className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
@@ -15,6 +17,8 @@ export default function AdminHomePage() {
             هذه الصفحة مؤقتة لاختبار تسجيل الدخول وحماية المسارات.
             سنبني لوحة المدير الكاملة في مرحلتها المخصصة لاحقًا.
           </p>
+
+          <LogoutButton />
         </section>
       </div>
     </main>
