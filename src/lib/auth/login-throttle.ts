@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 import { LoginThrottleScope } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db/prisma";
@@ -44,10 +44,39 @@ export type LoginThrottleStatus = {
   retryAfterSeconds: number;
 };
 
+function getThrottleHmacSecret(): string {
+  const secret =
+    process.env.LOGIN_THROTTLE_HMAC_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      "LOGIN_THROTTLE_HMAC_SECRET is not configured.",
+    );
+  }
+
+  if (secret.length < 32) {
+    throw new Error(
+      "LOGIN_THROTTLE_HMAC_SECRET must be at least 32 characters.",
+    );
+  }
+
+  return secret;
+}
+
+/**
+ * نخزن HMAC للمعرّف بدل القيمة الخام.
+ *
+ * هذا أفضل من SHA-256 العادي خصوصًا للمعرفات
+ * منخفضة التنوع مثل عناوين IP، لأن إعادة حساب
+ * القيمة تتطلب معرفة السر الموجود على الخادم.
+ */
 export function hashThrottleIdentifier(
   identifier: string,
 ): string {
-  return createHash("sha256")
+  return createHmac(
+    "sha256",
+    getThrottleHmacSecret(),
+  )
     .update(identifier)
     .digest("hex");
 }
@@ -89,10 +118,6 @@ function getBlockDurationMinutes(
   );
 }
 
-/**
- * نتحقق من خطأ unique constraint بدون ربط
- * طبقة الحماية بتفاصيل داخلية إضافية من Prisma.
- */
 function isUniqueConstraintError(
   error: unknown,
 ): boolean {
@@ -164,11 +189,6 @@ export async function recordFailedLoginAttempt(
 
   const policy = getThrottlePolicy(scope);
 
-  /**
-   * قد تصل عدة محاولات في اللحظة نفسها.
-   * نعيد المحاولة عند اكتشاف أن طلبًا آخر سبقنا
-   * وغير السجل بين القراءة والكتابة.
-   */
   for (
     let attempt = 0;
     attempt < MAX_CONCURRENCY_RETRIES;
@@ -200,10 +220,6 @@ export async function recordFailedLoginAttempt(
 
         return;
       } catch (error) {
-        /**
-         * ربما أنشأ طلب متزامن السجل بعد قراءتنا مباشرة.
-         * في هذه الحالة نعيد القراءة بدل إسقاط المحاولة.
-         */
         if (isUniqueConstraintError(error)) {
           continue;
         }
@@ -284,10 +300,6 @@ export async function recordFailedLoginAttempt(
     }
   }
 
-  /**
-   * إذا استمر التنافس بعد عدة محاولات، لا نتجاهل
-   * فشل الحماية بصمت.
-   */
   throw new Error(
     "Unable to record login throttle after concurrent updates.",
   );

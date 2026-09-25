@@ -32,9 +32,15 @@ import {
   recordFailedLoginAttempt,
 } from "@/lib/auth/login-throttle";
 
+const TEST_HMAC_SECRET =
+  "test-login-throttle-secret-1234567890";
+
 describe("login throttling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    process.env.LOGIN_THROTTLE_HMAC_SECRET =
+      TEST_HMAC_SECRET;
   });
 
   it("hashes identifiers consistently", () => {
@@ -56,6 +62,40 @@ describe("login throttling", () => {
 
     expect(identifierHash).not.toBe(identifier);
     expect(identifierHash).not.toContain(identifier);
+  });
+
+  it("produces a different hash when the HMAC secret changes", () => {
+    const firstHash =
+      hashThrottleIdentifier("student-001");
+
+    process.env.LOGIN_THROTTLE_HMAC_SECRET =
+      "different-test-secret-123456789012345";
+
+    const secondHash =
+      hashThrottleIdentifier("student-001");
+
+    expect(firstHash).not.toBe(secondHash);
+  });
+
+  it("throws when the HMAC secret is missing", () => {
+    delete process.env.LOGIN_THROTTLE_HMAC_SECRET;
+
+    expect(() =>
+      hashThrottleIdentifier("student-001"),
+    ).toThrow(
+      "LOGIN_THROTTLE_HMAC_SECRET is not configured.",
+    );
+  });
+
+  it("throws when the HMAC secret is too short", () => {
+    process.env.LOGIN_THROTTLE_HMAC_SECRET =
+      "too-short";
+
+    expect(() =>
+      hashThrottleIdentifier("student-001"),
+    ).toThrow(
+      "LOGIN_THROTTLE_HMAC_SECRET must be at least 32 characters.",
+    );
   });
 
   it("returns unblocked when no throttle record exists", async () => {
@@ -219,20 +259,18 @@ describe("login throttling", () => {
   });
 
   it("retries when another request updates the record first", async () => {
-    const firstWindowStartedAt = new Date();
-    const secondWindowStartedAt =
-      firstWindowStartedAt;
+    const windowStartedAt = new Date();
 
     findUniqueMock
       .mockResolvedValueOnce({
         id: "throttle-1",
         failureCount: 2,
-        windowStartedAt: firstWindowStartedAt,
+        windowStartedAt,
       })
       .mockResolvedValueOnce({
         id: "throttle-1",
         failureCount: 3,
-        windowStartedAt: secondWindowStartedAt,
+        windowStartedAt,
       });
 
     updateManyMock
