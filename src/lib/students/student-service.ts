@@ -315,8 +315,8 @@ export async function addStudentToSection(
   }
 
   /**
-   * القرار الجديد للمنصة:
-   * لا يوجد "نقل بين الشعب".
+   * القرار الحالي للمنصة:
+   * لا يوجد نقل مباشر بين الشعب.
    *
    * يجب إزالة الطالبة من شعبتها الحالية أولًا،
    * ثم إضافتها إلى الشعبة الأخرى كعملية منفصلة.
@@ -410,4 +410,161 @@ export async function removeStudentFromSection(
       isActive: true,
     },
   });
+}
+
+/**
+ * يغيّر حالة الطالبة وحساب المستخدم معًا.
+ *
+ * لا نسمح بأن تكون Student مفعلة بينما User معطل،
+ * أو العكس.
+ *
+ * عند التعطيل نلغي كل الجلسات الحالية أيضًا.
+ * هذا يمنع جلسة قديمة من العودة للعمل إذا أُعيد
+ * تفعيل الحساب لاحقًا.
+ */
+export async function setStudentActiveState(
+  studentId: string,
+  isActive: boolean,
+) {
+  const student =
+    await prisma.student.findUnique({
+      where: {
+        id: studentId,
+      },
+      select: {
+        id: true,
+        userId: true,
+        isActive: true,
+        user: {
+          select: {
+            isActive: true,
+          },
+        },
+      },
+    });
+
+  if (!student) {
+    throw new StudentServiceError(
+      "student_not_found",
+    );
+  }
+
+  /**
+   * إذا كانت الحالتان متطابقتين أصلًا مع المطلوب،
+   * لا ننفذ كتابات جديدة.
+   */
+  if (
+    student.isActive === isActive &&
+    student.user.isActive === isActive
+  ) {
+    return prisma.student.findUniqueOrThrow({
+      where: {
+        id: student.id,
+      },
+      select: {
+        id: true,
+        studentCode: true,
+        fullName: true,
+        currentSectionId: true,
+        isActive: true,
+        user: {
+          select: {
+            id: true,
+            username: true,
+            role: true,
+            isActive: true,
+          },
+        },
+      },
+    });
+  }
+
+  const now = new Date();
+
+  return prisma.$transaction(
+    async (transaction) => {
+      await transaction.user.update({
+        where: {
+          id: student.userId,
+        },
+        data: {
+          isActive,
+        },
+      });
+
+      const updatedStudent =
+        await transaction.student.update({
+          where: {
+            id: student.id,
+          },
+          data: {
+            isActive,
+          },
+          select: {
+            id: true,
+            studentCode: true,
+            fullName: true,
+            currentSectionId: true,
+            isActive: true,
+            user: {
+              select: {
+                id: true,
+                username: true,
+                role: true,
+                isActive: true,
+              },
+            },
+          },
+        });
+
+      /**
+       * التعطيل يلغي الجلسات النشطة.
+       *
+       * الجلسات الملغاة لا نعيد تفعيلها لاحقًا،
+       * حتى إذا أُعيد تفعيل حساب الطالبة.
+       */
+      if (!isActive) {
+        await transaction.session.updateMany({
+          where: {
+            userId: student.userId,
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: now,
+            revokeReason:
+              "student_deactivated",
+          },
+        });
+      }
+
+      return updatedStudent;
+    },
+  );
+}
+
+/**
+ * واجهة واضحة لتعطيل الطالبة.
+ */
+export function deactivateStudent(
+  studentId: string,
+) {
+  return setStudentActiveState(
+    studentId,
+    false,
+  );
+}
+
+/**
+ * واجهة واضحة لإعادة تفعيل الطالبة.
+ *
+ * لا تعيد الجلسات القديمة التي تم إلغاؤها.
+ * تحتاج الطالبة إلى تسجيل دخول جديد.
+ */
+export function activateStudent(
+  studentId: string,
+) {
+  return setStudentActiveState(
+    studentId,
+    true,
+  );
 }

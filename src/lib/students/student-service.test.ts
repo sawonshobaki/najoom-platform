@@ -6,21 +6,25 @@ const {
   hashPasswordMock,
   userFindUniqueMock,
   userCreateMock,
+  userUpdateMock,
   studentFindUniqueMock,
   studentFindUniqueOrThrowMock,
   studentCreateMock,
   studentUpdateMock,
   sectionFindUniqueMock,
+  sessionUpdateManyMock,
   transactionMock,
 } = vi.hoisted(() => ({
   hashPasswordMock: vi.fn(),
   userFindUniqueMock: vi.fn(),
   userCreateMock: vi.fn(),
+  userUpdateMock: vi.fn(),
   studentFindUniqueMock: vi.fn(),
   studentFindUniqueOrThrowMock: vi.fn(),
   studentCreateMock: vi.fn(),
   studentUpdateMock: vi.fn(),
   sectionFindUniqueMock: vi.fn(),
+  sessionUpdateManyMock: vi.fn(),
   transactionMock: vi.fn(),
 }));
 
@@ -47,9 +51,12 @@ vi.mock("@/lib/db/prisma", () => ({
 
 import {
   StudentServiceError,
+  activateStudent,
   addStudentToSection,
   createStudent,
+  deactivateStudent,
   removeStudentFromSection,
+  setStudentActiveState,
 } from "@/lib/students/student-service";
 
 describe("student service", () => {
@@ -65,9 +72,14 @@ describe("student service", () => {
         callback({
           user: {
             create: userCreateMock,
+            update: userUpdateMock,
           },
           student: {
             create: studentCreateMock,
+            update: studentUpdateMock,
+          },
+          session: {
+            updateMany: sessionUpdateManyMock,
           },
         }),
     );
@@ -456,5 +468,186 @@ describe("student service", () => {
     ).rejects.toBeInstanceOf(
       StudentServiceError,
     );
+  });
+
+  it("deactivates the student and user in one transaction", async () => {
+    studentFindUniqueMock.mockResolvedValue({
+      id: "student-1",
+      userId: "user-1",
+      isActive: true,
+      user: {
+        isActive: true,
+      },
+    });
+
+    userUpdateMock.mockResolvedValue({
+      id: "user-1",
+      isActive: false,
+    });
+
+    studentUpdateMock.mockResolvedValue({
+      id: "student-1",
+      studentCode: "ST-0001",
+      fullName: "طالبة تجريبية",
+      currentSectionId: "section-1",
+      isActive: false,
+      user: {
+        id: "user-1",
+        username: "student-001",
+        role: UserRole.STUDENT,
+        isActive: false,
+      },
+    });
+
+    sessionUpdateManyMock.mockResolvedValue({
+      count: 2,
+    });
+
+    const result = await deactivateStudent(
+      "student-1",
+    );
+
+    expect(transactionMock).toHaveBeenCalledOnce();
+
+    expect(userUpdateMock).toHaveBeenCalledWith({
+      where: {
+        id: "user-1",
+      },
+      data: {
+        isActive: false,
+      },
+    });
+
+    expect(studentUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "student-1",
+        },
+        data: {
+          isActive: false,
+        },
+      }),
+    );
+
+    expect(sessionUpdateManyMock).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: expect.any(Date),
+        revokeReason: "student_deactivated",
+      },
+    });
+
+    expect(result.isActive).toBe(false);
+  });
+
+  it("activates the student and user without restoring old sessions", async () => {
+    studentFindUniqueMock.mockResolvedValue({
+      id: "student-1",
+      userId: "user-1",
+      isActive: false,
+      user: {
+        isActive: false,
+      },
+    });
+
+    userUpdateMock.mockResolvedValue({
+      id: "user-1",
+      isActive: true,
+    });
+
+    studentUpdateMock.mockResolvedValue({
+      id: "student-1",
+      studentCode: "ST-0001",
+      fullName: "طالبة تجريبية",
+      currentSectionId: "section-1",
+      isActive: true,
+      user: {
+        id: "user-1",
+        username: "student-001",
+        role: UserRole.STUDENT,
+        isActive: true,
+      },
+    });
+
+    const result = await activateStudent(
+      "student-1",
+    );
+
+    expect(userUpdateMock).toHaveBeenCalledWith({
+      where: {
+        id: "user-1",
+      },
+      data: {
+        isActive: true,
+      },
+    });
+
+    expect(studentUpdateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          isActive: true,
+        },
+      }),
+    );
+
+    expect(sessionUpdateManyMock).not.toHaveBeenCalled();
+
+    expect(result.isActive).toBe(true);
+  });
+
+  it("does not open a transaction when the active state already matches", async () => {
+    studentFindUniqueMock.mockResolvedValue({
+      id: "student-1",
+      userId: "user-1",
+      isActive: true,
+      user: {
+        isActive: true,
+      },
+    });
+
+    studentFindUniqueOrThrowMock.mockResolvedValue({
+      id: "student-1",
+      studentCode: "ST-0001",
+      fullName: "طالبة تجريبية",
+      currentSectionId: "section-1",
+      isActive: true,
+      user: {
+        id: "user-1",
+        username: "student-001",
+        role: UserRole.STUDENT,
+        isActive: true,
+      },
+    });
+
+    const result = await setStudentActiveState(
+      "student-1",
+      true,
+    );
+
+    expect(transactionMock).not.toHaveBeenCalled();
+
+    expect(
+      studentFindUniqueOrThrowMock,
+    ).toHaveBeenCalledOnce();
+
+    expect(result.isActive).toBe(true);
+  });
+
+  it("throws when changing active state for a missing student", async () => {
+    studentFindUniqueMock.mockResolvedValue(null);
+
+    await expect(
+      setStudentActiveState(
+        "missing-student",
+        false,
+      ),
+    ).rejects.toMatchObject({
+      code: "student_not_found",
+    });
+
+    expect(transactionMock).not.toHaveBeenCalled();
   });
 });
