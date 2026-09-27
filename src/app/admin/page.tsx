@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { LogoutButton } from "./logout-button";
 
 export default function AdminHomePage() {
@@ -14,11 +16,20 @@ export default function AdminHomePage() {
           </h1>
 
           <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-            هذه الصفحة مؤقتة لاختبار تسجيل الدخول وحماية المسارات.
-            سنبني لوحة المدير الكاملة في مرحلتها المخصصة لاحقًا.
+            من هنا يمكنك الوصول إلى أدوات
+            الإدارة الخاصة بالمنصة.
           </p>
 
-          <LogoutButton />
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/admin/students"
+              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[var(--najoom-navy)] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--najoom-navy)] focus:ring-offset-2"
+            >
+              إدارة الطالبات
+            </Link>
+
+            <LogoutButton />
+          </div>
         </section>
       </div>
     </main>
