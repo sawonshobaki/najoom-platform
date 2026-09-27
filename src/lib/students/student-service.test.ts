@@ -51,8 +51,7 @@ vi.mock("@/lib/db/prisma", () => ({
     },
     student: {
       findUnique: studentFindUniqueMock,
-      findUniqueOrThrow:
-        studentFindUniqueOrThrowMock,
+      findUniqueOrThrow: studentFindUniqueOrThrowMock,
       findMany: studentFindManyMock,
       count: studentCountMock,
       update: studentUpdateMock,
@@ -76,9 +75,49 @@ import {
   setStudentActiveState,
 } from "@/lib/students/student-service";
 
+const studentInput = {
+  username: "student-001",
+  password: "ValidPassword2026",
+  studentCode: "ST-0001",
+  fullName: "طالبة تجريبية",
+};
+
+const unassignedStudent = {
+  id: "student-1",
+  studentCode: "ST-0001",
+  fullName: "طالبة تجريبية",
+  currentSectionId: null,
+  isActive: true,
+};
+
+const studentUser = {
+  id: "user-1",
+  username: "student-001",
+  role: UserRole.STUDENT,
+  isActive: true,
+};
+
+function mockActiveSection(
+  id = "section-1",
+) {
+  sectionFindUniqueMock.mockResolvedValue({
+    id,
+    isActive: true,
+  });
+}
+
+function mockUnassignedStudent() {
+  studentFindUniqueMock.mockResolvedValue({
+    id: "student-1",
+    isActive: true,
+    currentSectionId: null,
+  });
+}
+
 describe("student service", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // مهم: إعادة ضبط التنفيذ وسجل الاستدعاءات معًا.
+    vi.resetAllMocks();
 
     hashPasswordMock.mockResolvedValue(
       "hashed-password",
@@ -105,1228 +144,1038 @@ describe("student service", () => {
     );
   });
 
-  it("creates a student and user in one transaction", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
+  describe("createStudent", () => {
+    beforeEach(() => {
+      userFindUniqueMock.mockResolvedValue(null);
+      studentFindUniqueMock.mockResolvedValue(null);
 
-    userCreateMock.mockResolvedValue({
-      id: "user-1",
-      username: "student-001",
-    });
-
-    studentCreateMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: null,
-      isActive: true,
-      user: {
+      userCreateMock.mockResolvedValue({
         id: "user-1",
         username: "student-001",
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
+      });
+
+      studentCreateMock.mockResolvedValue({
+        ...unassignedStudent,
+        user: studentUser,
+      });
     });
 
-    const result = await createStudent({
-      username: "  student-001  ",
-      password: "ValidPassword2026",
-      studentCode: " st-0001 ",
-      fullName: "  طالبة تجريبية  ",
-    });
+    it("creates a student and user in one transaction", async () => {
+      const result = await createStudent({
+        ...studentInput,
+        username: "  student-001  ",
+        studentCode: " st-0001 ",
+        fullName: "  طالبة تجريبية  ",
+      });
 
-    expect(
-      hashPasswordMock,
-    ).toHaveBeenCalledWith(
-      "ValidPassword2026",
-    );
+      expect(hashPasswordMock).toHaveBeenCalledWith(
+        "ValidPassword2026",
+      );
 
-    expect(
-      transactionMock,
-    ).toHaveBeenCalledOnce();
+      expect(transactionMock).toHaveBeenCalledOnce();
 
-    expect(
-      userCreateMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          username: "student-001",
-          passwordHash:
-            "hashed-password",
-          role: UserRole.STUDENT,
-          isActive: true,
-        },
-      }),
-    );
-
-    expect(
-      studentCreateMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          userId: "user-1",
-          studentCode: "ST-0001",
-          fullName:
-            "طالبة تجريبية",
-          currentSectionId: null,
-          isActive: true,
-        },
-      }),
-    );
-
-    expect(result.id).toBe(
-      "student-1",
-    );
-  });
-
-  it("creates a student in an active section", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-1",
-      isActive: true,
-    });
-
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
-
-    userCreateMock.mockResolvedValue({
-      id: "user-1",
-      username: "student-001",
-    });
-
-    studentCreateMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-1",
-      isActive: true,
-      user: {
-        id: "user-1",
-        username: "student-001",
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
-    });
-
-    await createStudent({
-      username: "student-001",
-      password: "ValidPassword2026",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      sectionId: "section-1",
-    });
-
-    expect(
-      sectionFindUniqueMock,
-    ).toHaveBeenCalledWith({
-      where: {
-        id: "section-1",
-      },
-      select: {
-        id: true,
-        isActive: true,
-      },
-    });
-
-    expect(
-      studentCreateMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          currentSectionId:
-            "section-1",
+      expect(userCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            username: "student-001",
+            passwordHash: "hashed-password",
+            role: UserRole.STUDENT,
+            isActive: true,
+          },
         }),
-      }),
-    );
-  });
+      );
 
-  it("rejects creating a student in an inactive section", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-1",
-      isActive: false,
+      expect(studentCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            userId: "user-1",
+            studentCode: "ST-0001",
+            fullName: "طالبة تجريبية",
+            currentSectionId: null,
+            isActive: true,
+          },
+        }),
+      );
+
+      expect(result.id).toBe("student-1");
     });
 
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
+    it("creates a student in an active section", async () => {
+      mockActiveSection();
+
+      await createStudent({
+        ...studentInput,
         sectionId: "section-1",
-      }),
-    ).rejects.toMatchObject({
-      code: "section_inactive",
+      });
+
+      expect(sectionFindUniqueMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "section-1",
+          },
+          select: {
+            id: true,
+            isActive: true,
+          },
+        });
+
+      expect(studentCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            currentSectionId: "section-1",
+          }),
+        }),
+      );
     });
 
-    expect(
-      transactionMock,
-    ).not.toHaveBeenCalled();
-  });
+    it("rejects an inactive section", async () => {
+      sectionFindUniqueMock.mockResolvedValue({
+        id: "section-1",
+        isActive: false,
+      });
 
-  it("rejects duplicate usernames during the early check", async () => {
-    userFindUniqueMock.mockResolvedValue({
-      id: "existing-user",
+      await expect(
+        createStudent({
+          ...studentInput,
+          sectionId: "section-1",
+        }),
+      ).rejects.toMatchObject({
+        code: "section_inactive",
+      });
+
+      expect(transactionMock)
+        .not.toHaveBeenCalled();
     });
 
-    studentFindUniqueMock.mockResolvedValue(null);
+    it("rejects a missing section", async () => {
+      sectionFindUniqueMock.mockResolvedValue(
+        null,
+      );
 
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toMatchObject({
-      code: "username_already_exists",
+      await expect(
+        createStudent({
+          ...studentInput,
+          sectionId: "missing-section",
+        }),
+      ).rejects.toMatchObject({
+        code: "section_not_found",
+      });
     });
 
-    expect(
-      transactionMock,
-    ).not.toHaveBeenCalled();
-  });
+    it("rejects duplicate usernames", async () => {
+      userFindUniqueMock.mockResolvedValue({
+        id: "existing-user",
+      });
 
-  it("rejects duplicate student codes during the early check", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toMatchObject({
+        code: "username_already_exists",
+      });
 
-    studentFindUniqueMock.mockResolvedValue({
-      id: "existing-student",
+      expect(transactionMock)
+        .not.toHaveBeenCalled();
     });
 
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "student_code_already_exists",
+    it("rejects duplicate student codes", async () => {
+      studentFindUniqueMock.mockResolvedValue({
+        id: "existing-student",
+      });
+
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toMatchObject({
+        code: "student_code_already_exists",
+      });
+
+      expect(transactionMock)
+        .not.toHaveBeenCalled();
     });
 
-    expect(
-      transactionMock,
-    ).not.toHaveBeenCalled();
-  });
+    it("handles concurrent username conflicts", async () => {
+      userCreateMock.mockRejectedValue({
+        code: "P2002",
+      });
 
-  it("maps a concurrent username unique conflict to a service error", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toMatchObject({
+        code: "username_already_exists",
+      });
 
-    userCreateMock.mockRejectedValue({
-      code: "P2002",
+      expect(studentCreateMock)
+        .not.toHaveBeenCalled();
     });
 
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toMatchObject({
-      code: "username_already_exists",
+    it("handles concurrent student code conflicts", async () => {
+      studentCreateMock.mockRejectedValue({
+        code: "P2002",
+      });
+
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toMatchObject({
+        code: "student_code_already_exists",
+      });
+
+      expect(userCreateMock).toHaveBeenCalledOnce();
+      expect(studentCreateMock)
+        .toHaveBeenCalledOnce();
     });
 
-    expect(
-      transactionMock,
-    ).toHaveBeenCalledOnce();
+    it("does not hide unexpected user creation errors", async () => {
+      const error = new Error(
+        "Unexpected user database error",
+      );
 
-    expect(
-      studentCreateMock,
-    ).not.toHaveBeenCalled();
-  });
+      userCreateMock.mockRejectedValue(error);
 
-  it("maps a concurrent student code unique conflict to a service error", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
-
-    userCreateMock.mockResolvedValue({
-      id: "user-1",
-      username: "student-001",
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toBe(error);
     });
 
-    studentCreateMock.mockRejectedValue({
-      code: "P2002",
+    it("does not hide unexpected student creation errors", async () => {
+      const error = new Error(
+        "Unexpected student database error",
+      );
+
+      studentCreateMock.mockRejectedValue(error);
+
+      await expect(
+        createStudent(studentInput),
+      ).rejects.toBe(error);
     });
 
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "student_code_already_exists",
-    });
+    it.each([
+      [
+        "invalid_username",
+        { username: " " },
+      ],
+      [
+        "invalid_student_code",
+        { studentCode: " " },
+      ],
+      [
+        "invalid_full_name",
+        { fullName: " " },
+      ],
+    ])(
+      "rejects %s",
+      async (code, changes) => {
+        await expect(
+          createStudent({
+            ...studentInput,
+            ...changes,
+          }),
+        ).rejects.toMatchObject({
+          code,
+        });
 
-    expect(
-      transactionMock,
-    ).toHaveBeenCalledOnce();
-
-    expect(
-      userCreateMock,
-    ).toHaveBeenCalledOnce();
-
-    expect(
-      studentCreateMock,
-    ).toHaveBeenCalledOnce();
-  });
-
-  it("does not hide unexpected database errors during user creation", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
-
-    const databaseError = new Error(
-      "unexpected database error",
+        expect(transactionMock)
+          .not.toHaveBeenCalled();
+      },
     );
-
-    userCreateMock.mockRejectedValue(
-      databaseError,
-    );
-
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toBe(databaseError);
   });
 
-  it("does not hide unexpected database errors during student creation", async () => {
-    userFindUniqueMock.mockResolvedValue(null);
-    studentFindUniqueMock.mockResolvedValue(null);
+  describe("addStudentToSection", () => {
+    beforeEach(() => {
+      mockActiveSection("section-2");
+      mockUnassignedStudent();
 
-    userCreateMock.mockResolvedValue({
-      id: "user-1",
-      username: "student-001",
+      studentUpdateManyMock.mockResolvedValue({
+        count: 1,
+      });
+
+      studentFindUniqueOrThrowMock.mockResolvedValue({
+        ...unassignedStudent,
+        currentSectionId: "section-2",
+      });
     });
 
-    const databaseError = new Error(
-      "unexpected database error",
-    );
-
-    studentCreateMock.mockRejectedValue(
-      databaseError,
-    );
-
-    await expect(
-      createStudent({
-        username: "student-001",
-        password:
-          "ValidPassword2026",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-      }),
-    ).rejects.toBe(databaseError);
-  });
-
-  it("atomically adds an unassigned active student to an active section", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 1,
-    });
-
-    studentFindUniqueOrThrowMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-2",
-      isActive: true,
-    });
-
-    const result =
-      await addStudentToSection(
+    it("atomically assigns an unassigned student", async () => {
+      const result = await addStudentToSection(
         "student-1",
         "section-2",
       );
 
-    expect(
-      studentUpdateManyMock,
-    ).toHaveBeenCalledWith({
-      where: {
+      expect(studentUpdateManyMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "student-1",
+            isActive: true,
+            currentSectionId: null,
+          },
+          data: {
+            currentSectionId: "section-2",
+          },
+        });
+
+      expect(studentUpdateMock)
+        .not.toHaveBeenCalled();
+
+      expect(result.currentSectionId)
+        .toBe("section-2");
+    });
+
+    it("prevents direct transfers", async () => {
+      studentFindUniqueMock.mockResolvedValue({
         id: "student-1",
         isActive: true,
-        currentSectionId: null,
-      },
-      data: {
-        currentSectionId:
+        currentSectionId: "section-1",
+      });
+
+      await expect(
+        addStudentToSection(
+          "student-1",
           "section-2",
-      },
+        ),
+      ).rejects.toMatchObject({
+        code: "student_already_in_section",
+      });
+
+      expect(studentUpdateManyMock)
+        .not.toHaveBeenCalled();
     });
 
-    expect(
-      studentUpdateMock,
-    ).not.toHaveBeenCalled();
-
-    expect(
-      studentFindUniqueOrThrowMock,
-    ).toHaveBeenCalledWith({
-      where: {
+    it("does not rewrite an existing assignment to the same section", async () => {
+      studentFindUniqueMock.mockResolvedValue({
         id: "student-1",
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
         isActive: true,
-      },
-    });
+        currentSectionId: "section-2",
+      });
 
-    expect(
-      result.currentSectionId,
-    ).toBe("section-2");
-  });
-
-  it("prevents direct transfer between sections", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: "section-1",
-    });
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-2",
-      ),
-    ).rejects.toMatchObject({
-      code:
-        "student_already_in_section",
-    });
-
-    expect(
-      studentUpdateManyMock,
-    ).not.toHaveBeenCalled();
-
-    expect(
-      studentUpdateMock,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("does not rewrite the student when already in the same section", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-1",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: "section-1",
-    });
-
-    studentFindUniqueOrThrowMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-1",
-      isActive: true,
-    });
-
-    const result =
-      await addStudentToSection(
-        "student-1",
-        "section-1",
-      );
-
-    expect(
-      studentUpdateManyMock,
-    ).not.toHaveBeenCalled();
-
-    expect(
-      studentUpdateMock,
-    ).not.toHaveBeenCalled();
-
-    expect(
-      studentFindUniqueOrThrowMock,
-    ).toHaveBeenCalledOnce();
-
-    expect(
-      result.currentSectionId,
-    ).toBe("section-1");
-  });
-
-  it("rejects adding an inactive student to a section", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-1",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      isActive: false,
-      currentSectionId: null,
-    });
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-1",
-      ),
-    ).rejects.toMatchObject({
-      code: "student_inactive",
-    });
-
-    expect(
-      studentUpdateManyMock,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("treats a concurrent assignment to the same section as idempotent success", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 0,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: "section-2",
-    });
-
-    studentFindUniqueOrThrowMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-2",
-      isActive: true,
-    });
-
-    const result =
-      await addStudentToSection(
+      const result = await addStudentToSection(
         "student-1",
         "section-2",
       );
 
-    expect(
-      studentUpdateManyMock,
-    ).toHaveBeenCalledOnce();
+      expect(studentUpdateManyMock)
+        .not.toHaveBeenCalled();
 
-    expect(
-      result.currentSectionId,
-    ).toBe("section-2");
-  });
-
-  it("prevents a concurrent assignment from becoming a direct transfer", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
+      expect(result.currentSectionId)
+        .toBe("section-2");
     });
 
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 0,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: "section-3",
-    });
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-2",
-      ),
-    ).rejects.toMatchObject({
-      code:
-        "student_already_in_section",
-    });
-
-    expect(
-      studentUpdateManyMock,
-    ).toHaveBeenCalledOnce();
-
-    expect(
-      studentFindUniqueOrThrowMock,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("reports when the student becomes inactive during section assignment", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 0,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: false,
-      currentSectionId: null,
-    });
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-2",
-      ),
-    ).rejects.toMatchObject({
-      code: "student_inactive",
-    });
-  });
-
-  it("reports when the student disappears during section assignment", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 0,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce(
-      null,
-    );
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-2",
-      ),
-    ).rejects.toMatchObject({
-      code: "student_not_found",
-    });
-  });
-
-  it("does not hide an unexpected failed conditional assignment", async () => {
-    sectionFindUniqueMock.mockResolvedValue({
-      id: "section-2",
-      isActive: true,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    studentUpdateManyMock.mockResolvedValue({
-      count: 0,
-    });
-
-    studentFindUniqueMock.mockResolvedValueOnce({
-      id: "student-1",
-      isActive: true,
-      currentSectionId: null,
-    });
-
-    await expect(
-      addStudentToSection(
-        "student-1",
-        "section-2",
-      ),
-    ).rejects.toThrow(
-      "Student section assignment failed unexpectedly.",
-    );
-  });
-
-  it("removes a student from the current section without deleting the student", async () => {
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      currentSectionId: "section-1",
-    });
-
-    studentUpdateMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: null,
-      isActive: true,
-    });
-
-    const result =
-      await removeStudentFromSection(
-        "student-1",
-      );
-
-    expect(
-      studentUpdateMock,
-    ).toHaveBeenCalledWith({
-      where: {
+    it("rejects an inactive student", async () => {
+      studentFindUniqueMock.mockResolvedValue({
         id: "student-1",
-      },
-      data: {
+        isActive: false,
         currentSectionId: null,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-      },
+      });
+
+      await expect(
+        addStudentToSection(
+          "student-1",
+          "section-2",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_inactive",
+      });
+
+      expect(studentUpdateManyMock)
+        .not.toHaveBeenCalled();
     });
 
-    expect(
-      result.currentSectionId,
-    ).toBeNull();
-  });
+    it("rejects a missing student", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        null,
+      );
 
-  it("does not rewrite a student who is already unassigned", async () => {
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      currentSectionId: null,
+      await expect(
+        addStudentToSection(
+          "missing-student",
+          "section-2",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_not_found",
+      });
     });
 
-    studentFindUniqueOrThrowMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: null,
-      isActive: true,
+    it("treats concurrent assignment to the same section as success", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: "section-2",
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      const result = await addStudentToSection(
+        "student-1",
+        "section-2",
+      );
+
+      expect(result.currentSectionId)
+        .toBe("section-2");
     });
 
-    await removeStudentFromSection(
-      "student-1",
-    );
+    it("prevents a concurrent direct transfer", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: "section-3",
+        });
 
-    expect(
-      studentUpdateMock,
-    ).not.toHaveBeenCalled();
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
 
-    expect(
-      studentFindUniqueOrThrowMock,
-    ).toHaveBeenCalledOnce();
+      await expect(
+        addStudentToSection(
+          "student-1",
+          "section-2",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_already_in_section",
+      });
+    });
+
+    it("detects concurrent deactivation", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: false,
+          currentSectionId: null,
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        addStudentToSection(
+          "student-1",
+          "section-2",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_inactive",
+      });
+    });
+
+    it("detects concurrent deletion", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        })
+        .mockResolvedValueOnce(null);
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        addStudentToSection(
+          "student-1",
+          "section-2",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_not_found",
+      });
+    });
+
+    it("does not hide unexplained assignment failure", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          isActive: true,
+          currentSectionId: null,
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        addStudentToSection(
+          "student-1",
+          "section-2",
+        ),
+      ).rejects.toThrow(
+        "Student section assignment failed unexpectedly.",
+      );
+    });
   });
 
-  it("throws a typed error when the student does not exist", async () => {
-    studentFindUniqueMock.mockResolvedValue(null);
+  describe("removeStudentFromSection", () => {
+    beforeEach(() => {
+      studentFindUniqueMock.mockResolvedValue({
+        id: "student-1",
+        currentSectionId: "section-1",
+      });
 
-    await expect(
-      removeStudentFromSection(
-        "missing-student",
-      ),
-    ).rejects.toBeInstanceOf(
-      StudentServiceError,
-    );
+      studentUpdateManyMock.mockResolvedValue({
+        count: 1,
+      });
+
+      studentFindUniqueOrThrowMock.mockResolvedValue(
+        unassignedStudent,
+      );
+    });
+
+    it("atomically removes the original assignment", async () => {
+      const result =
+        await removeStudentFromSection(
+          "student-1",
+        );
+
+      expect(studentUpdateManyMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "student-1",
+            currentSectionId: "section-1",
+          },
+          data: {
+            currentSectionId: null,
+          },
+        });
+
+      expect(studentUpdateMock)
+        .not.toHaveBeenCalled();
+
+      expect(result.currentSectionId)
+        .toBeNull();
+    });
+
+    it("does not rewrite an unassigned student", async () => {
+      studentFindUniqueMock.mockResolvedValue({
+        id: "student-1",
+        currentSectionId: null,
+      });
+
+      const result =
+        await removeStudentFromSection(
+          "student-1",
+        );
+
+      expect(studentUpdateManyMock)
+        .not.toHaveBeenCalled();
+
+      expect(result.currentSectionId)
+        .toBeNull();
+    });
+
+    it("rejects a missing student", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        removeStudentFromSection(
+          "missing-student",
+        ),
+      ).rejects.toBeInstanceOf(
+        StudentServiceError,
+      );
+
+      expect(studentUpdateManyMock)
+        .not.toHaveBeenCalled();
+    });
+
+    it("treats a concurrent removal as success", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-1",
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: null,
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      const result =
+        await removeStudentFromSection(
+          "student-1",
+        );
+
+      expect(studentUpdateManyMock)
+        .toHaveBeenCalledOnce();
+
+      expect(result.currentSectionId)
+        .toBeNull();
+    });
+
+    it("preserves a concurrently assigned new section", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-1",
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-2",
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        removeStudentFromSection(
+          "student-1",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_section_changed",
+      });
+
+      expect(studentUpdateManyMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "student-1",
+            currentSectionId: "section-1",
+          },
+          data: {
+            currentSectionId: null,
+          },
+        });
+
+      expect(studentUpdateMock)
+        .not.toHaveBeenCalled();
+
+      expect(studentFindUniqueOrThrowMock)
+        .not.toHaveBeenCalled();
+    });
+
+    it("detects concurrent deletion", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-1",
+        })
+        .mockResolvedValueOnce(null);
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        removeStudentFromSection(
+          "student-1",
+        ),
+      ).rejects.toMatchObject({
+        code: "student_not_found",
+      });
+    });
+
+    it("does not hide an unexplained removal failure", async () => {
+      studentFindUniqueMock
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-1",
+        })
+        .mockResolvedValueOnce({
+          id: "student-1",
+          currentSectionId: "section-1",
+        });
+
+      studentUpdateManyMock.mockResolvedValue({
+        count: 0,
+      });
+
+      await expect(
+        removeStudentFromSection(
+          "student-1",
+        ),
+      ).rejects.toThrow(
+        "Student section removal failed unexpectedly.",
+      );
+    });
   });
 
-  it("deactivates the student and user in one transaction", async () => {
-    studentFindUniqueMock.mockResolvedValue({
+  describe("student active state", () => {
+    const activeStudent = {
       id: "student-1",
       userId: "user-1",
       isActive: true,
       user: {
         isActive: true,
       },
-    });
+    };
 
-    userUpdateMock.mockResolvedValue({
-      id: "user-1",
-      isActive: false,
-    });
-
-    studentUpdateMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-1",
+    const inactiveStudent = {
+      ...activeStudent,
       isActive: false,
       user: {
-        id: "user-1",
-        username: "student-001",
-        role: UserRole.STUDENT,
         isActive: false,
       },
-    });
+    };
 
-    sessionUpdateManyMock.mockResolvedValue({
-      count: 2,
-    });
-
-    const result =
-      await deactivateStudent(
-        "student-1",
+    it("deactivates student and user in one transaction", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        activeStudent,
       );
 
-    expect(
-      transactionMock,
-    ).toHaveBeenCalledOnce();
-
-    expect(
-      userUpdateMock,
-    ).toHaveBeenCalledWith({
-      where: {
-        id: "user-1",
-      },
-      data: {
+      studentUpdateMock.mockResolvedValue({
+        ...unassignedStudent,
         isActive: false,
-      },
-    });
-
-    expect(
-      studentUpdateMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          id: "student-1",
-        },
-        data: {
+        user: {
+          ...studentUser,
           isActive: false,
         },
-      }),
-    );
+      });
 
-    expect(
-      sessionUpdateManyMock,
-    ).toHaveBeenCalledWith({
-      where: {
-        userId: "user-1",
-        revokedAt: null,
-      },
-      data: {
-        revokedAt:
-          expect.any(Date),
-        revokeReason:
-          "student_deactivated",
-      },
-    });
+      sessionUpdateManyMock.mockResolvedValue({
+        count: 2,
+      });
 
-    expect(result.isActive).toBe(
-      false,
-    );
-  });
-
-  it("activates the student and user without restoring old sessions", async () => {
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      userId: "user-1",
-      isActive: false,
-      user: {
-        isActive: false,
-      },
-    });
-
-    userUpdateMock.mockResolvedValue({
-      id: "user-1",
-      isActive: true,
-    });
-
-    studentUpdateMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-1",
-      isActive: true,
-      user: {
-        id: "user-1",
-        username: "student-001",
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
-    });
-
-    const result =
-      await activateStudent(
+      const result = await deactivateStudent(
         "student-1",
       );
 
-    expect(
-      userUpdateMock,
-    ).toHaveBeenCalledWith({
-      where: {
-        id: "user-1",
-      },
-      data: {
-        isActive: true,
-      },
+      expect(transactionMock)
+        .toHaveBeenCalledOnce();
+
+      expect(userUpdateMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "user-1",
+          },
+          data: {
+            isActive: false,
+          },
+        });
+
+      expect(studentUpdateMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              id: "student-1",
+            },
+            data: {
+              isActive: false,
+            },
+          }),
+        );
+
+      expect(sessionUpdateManyMock)
+        .toHaveBeenCalledWith({
+          where: {
+            userId: "user-1",
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: expect.any(Date),
+            revokeReason: "student_deactivated",
+          },
+        });
+
+      expect(result.isActive).toBe(false);
     });
 
-    expect(
-      studentUpdateMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          isActive: true,
-        },
-      }),
-    );
+    it("activates without restoring old sessions", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        inactiveStudent,
+      );
 
-    expect(
-      sessionUpdateManyMock,
-    ).not.toHaveBeenCalled();
+      studentUpdateMock.mockResolvedValue({
+        ...unassignedStudent,
+        user: studentUser,
+      });
 
-    expect(result.isActive).toBe(
-      true,
-    );
-  });
+      const result = await activateStudent(
+        "student-1",
+      );
 
-  it("does not open a transaction when the active state already matches", async () => {
-    studentFindUniqueMock.mockResolvedValue({
-      id: "student-1",
-      userId: "user-1",
-      isActive: true,
-      user: {
-        isActive: true,
-      },
+      expect(userUpdateMock)
+        .toHaveBeenCalledWith({
+          where: {
+            id: "user-1",
+          },
+          data: {
+            isActive: true,
+          },
+        });
+
+      expect(studentUpdateMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: {
+              isActive: true,
+            },
+          }),
+        );
+
+      expect(sessionUpdateManyMock)
+        .not.toHaveBeenCalled();
+
+      expect(result.isActive).toBe(true);
     });
 
-    studentFindUniqueOrThrowMock.mockResolvedValue({
-      id: "student-1",
-      studentCode: "ST-0001",
-      fullName: "طالبة تجريبية",
-      currentSectionId: "section-1",
-      isActive: true,
-      user: {
-        id: "user-1",
-        username: "student-001",
-        role: UserRole.STUDENT,
-        isActive: true,
-      },
-    });
+    it("avoids unnecessary transactions", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        activeStudent,
+      );
 
-    const result =
-      await setStudentActiveState(
+      studentFindUniqueOrThrowMock.mockResolvedValue({
+        ...unassignedStudent,
+        user: studentUser,
+      });
+
+      const result = await setStudentActiveState(
         "student-1",
         true,
       );
 
-    expect(
-      transactionMock,
-    ).not.toHaveBeenCalled();
+      expect(transactionMock)
+        .not.toHaveBeenCalled();
 
-    expect(
-      studentFindUniqueOrThrowMock,
-    ).toHaveBeenCalledOnce();
+      expect(studentFindUniqueOrThrowMock)
+        .toHaveBeenCalledOnce();
 
-    expect(result.isActive).toBe(
-      true,
-    );
+      expect(result.isActive).toBe(true);
+    });
+
+    it("rejects a missing student", async () => {
+      studentFindUniqueMock.mockResolvedValue(
+        null,
+      );
+
+      await expect(
+        setStudentActiveState(
+          "missing-student",
+          false,
+        ),
+      ).rejects.toMatchObject({
+        code: "student_not_found",
+      });
+
+      expect(transactionMock)
+        .not.toHaveBeenCalled();
+    });
   });
 
-  it("throws when changing active state for a missing student", async () => {
-    studentFindUniqueMock.mockResolvedValue(null);
-
-    await expect(
-      setStudentActiveState(
-        "missing-student",
-        false,
-      ),
-    ).rejects.toMatchObject({
-      code: "student_not_found",
-    });
-
-    expect(
-      transactionMock,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("lists students with default pagination", async () => {
-    studentFindManyMock.mockResolvedValue([
-      {
-        id: "student-1",
-        studentCode: "ST-0001",
-        fullName: "طالبة تجريبية",
-        isActive: true,
-        currentSectionId: "section-1",
-        user: {
-          id: "user-1",
-          username: "student-001",
-          isActive: true,
-        },
-        currentSection: {
-          id: "section-1",
-          name: "أ",
-          isActive: true,
-          grade: {
-            id: "grade-5",
-            name: "الصف الخامس",
-            sortOrder: 5,
-          },
-        },
-      },
-    ]);
-
-    studentCountMock.mockResolvedValue(1);
-
-    const result = await listStudents();
-
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {},
-        skip: 0,
-        take: 25,
-      }),
-    );
-
-    expect(
-      studentCountMock,
-    ).toHaveBeenCalledWith({
-      where: {},
-    });
-
-    expect(result.pagination).toEqual({
-      page: 1,
-      pageSize: 25,
-      totalCount: 1,
-      totalPages: 1,
-    });
-
-    expect(result.students).toHaveLength(1);
-  });
-
-  it("applies grade filter", async () => {
-    await listStudents({
-      gradeId: " grade-5 ",
-    });
-
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
+  describe("listStudents", () => {
+    it("lists students with default pagination", async () => {
+      studentFindManyMock.mockResolvedValue([
+        {
+          ...unassignedStudent,
+          currentSectionId: "section-1",
+          user: studentUser,
           currentSection: {
-            is: {
-              gradeId: "grade-5",
+            id: "section-1",
+            name: "أ",
+            isActive: true,
+            grade: {
+              id: "grade-5",
+              name: "الصف الخامس",
+              sortOrder: 5,
             },
           },
         },
-      }),
-    );
+      ]);
 
-    expect(
-      studentCountMock,
-    ).toHaveBeenCalledWith({
-      where: {
+      studentCountMock.mockResolvedValue(1);
+
+      const result = await listStudents();
+
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {},
+            skip: 0,
+            take: 25,
+          }),
+        );
+
+      expect(studentCountMock)
+        .toHaveBeenCalledWith({
+          where: {},
+        });
+
+      expect(result.pagination).toEqual({
+        page: 1,
+        pageSize: 25,
+        totalCount: 1,
+        totalPages: 1,
+      });
+
+      expect(result.students).toHaveLength(1);
+    });
+
+    it("applies the grade filter", async () => {
+      await listStudents({
+        gradeId: " grade-5 ",
+      });
+
+      const where = {
         currentSection: {
           is: {
             gradeId: "grade-5",
           },
         },
-      },
-    });
-  });
+      };
 
-  it("applies section and active state filters", async () => {
-    await listStudents({
-      sectionId: " section-1 ",
-      isActive: false,
-    });
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where,
+          }),
+        );
 
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          isActive: false,
-          currentSectionId:
-            "section-1",
-        },
-      }),
-    );
-  });
-
-  it("lists students without a section when sectionId is null", async () => {
-    await listStudents({
-      sectionId: null,
+      expect(studentCountMock)
+        .toHaveBeenCalledWith({
+          where,
+        });
     });
 
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          currentSectionId: null,
-        },
-      }),
-    );
-  });
+    it("applies section and active-state filters", async () => {
+      await listStudents({
+        sectionId: " section-1 ",
+        isActive: false,
+      });
 
-  it("searches by name, student code, or username", async () => {
-    await listStudents({
-      search: "  نجوم  ",
-    });
-
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          OR: [
-            {
-              fullName: {
-                contains: "نجوم",
-                mode: "insensitive",
-              },
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              isActive: false,
+              currentSectionId: "section-1",
             },
-            {
-              studentCode: {
-                contains: "نجوم",
-                mode: "insensitive",
-              },
+          }),
+        );
+    });
+
+    it("lists students without a section", async () => {
+      await listStudents({
+        sectionId: null,
+      });
+
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              currentSectionId: null,
             },
-            {
-              user: {
-                username: {
-                  contains: "نجوم",
-                  mode: "insensitive",
+          }),
+        );
+    });
+
+    it("searches by name, code, or username", async () => {
+      await listStudents({
+        search: "  نجوم  ",
+      });
+
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              OR: [
+                {
+                  fullName: {
+                    contains: "نجوم",
+                    mode: "insensitive",
+                  },
                 },
-              },
+                {
+                  studentCode: {
+                    contains: "نجوم",
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  user: {
+                    username: {
+                      contains: "نجوم",
+                      mode: "insensitive",
+                    },
+                  },
+                },
+              ],
             },
-          ],
-        },
-      }),
+          }),
+        );
+    });
+
+    it("uses requested pagination values", async () => {
+      studentCountMock.mockResolvedValue(51);
+
+      const result = await listStudents({
+        page: 3,
+        pageSize: 20,
+      });
+
+      expect(studentFindManyMock)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            skip: 40,
+            take: 20,
+          }),
+        );
+
+      expect(result.pagination).toEqual({
+        page: 3,
+        pageSize: 20,
+        totalCount: 51,
+        totalPages: 3,
+      });
+    });
+
+    it("returns zero pages for an empty list", async () => {
+      const result = await listStudents();
+
+      expect(result.pagination).toEqual({
+        page: 1,
+        pageSize: 25,
+        totalCount: 0,
+        totalPages: 0,
+      });
+
+      expect(result.students).toEqual([]);
+    });
+
+    it.each([
+      { page: 0 },
+      { pageSize: 101 },
+      { page: 1.5 },
+      { pageSize: 0 },
+      { gradeId: "   " },
+      { sectionId: "   " },
+      { search: "a".repeat(101) },
+    ])(
+      "rejects an invalid listing query: %j",
+      async (input) => {
+        await expect(
+          listStudents(input),
+        ).rejects.toMatchObject({
+          code: "invalid_student_list_query",
+        });
+
+        expect(studentFindManyMock)
+          .not.toHaveBeenCalled();
+
+        expect(studentCountMock)
+          .not.toHaveBeenCalled();
+      },
     );
-  });
-
-  it("uses requested pagination values", async () => {
-    studentCountMock.mockResolvedValue(51);
-
-    const result = await listStudents({
-      page: 3,
-      pageSize: 20,
-    });
-
-    expect(
-      studentFindManyMock,
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        skip: 40,
-        take: 20,
-      }),
-    );
-
-    expect(result.pagination).toEqual({
-      page: 3,
-      pageSize: 20,
-      totalCount: 51,
-      totalPages: 3,
-    });
-  });
-
-  it("returns zero total pages when there are no students", async () => {
-    studentFindManyMock.mockResolvedValue([]);
-    studentCountMock.mockResolvedValue(0);
-
-    const result = await listStudents();
-
-    expect(result.pagination).toEqual({
-      page: 1,
-      pageSize: 25,
-      totalCount: 0,
-      totalPages: 0,
-    });
-
-    expect(result.students).toEqual([]);
-  });
-
-  it("rejects invalid pagination", async () => {
-    await expect(
-      listStudents({
-        page: 0,
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "invalid_student_list_query",
-    });
-
-    await expect(
-      listStudents({
-        pageSize: 101,
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "invalid_student_list_query",
-    });
-
-    expect(
-      studentFindManyMock,
-    ).not.toHaveBeenCalled();
-
-    expect(
-      studentCountMock,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("rejects invalid empty grade or section filters", async () => {
-    await expect(
-      listStudents({
-        gradeId: "   ",
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "invalid_student_list_query",
-    });
-
-    await expect(
-      listStudents({
-        sectionId: "   ",
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "invalid_student_list_query",
-    });
-  });
-
-  it("rejects an excessively long search query", async () => {
-    await expect(
-      listStudents({
-        search: "a".repeat(101),
-      }),
-    ).rejects.toMatchObject({
-      code:
-        "invalid_student_list_query",
-    });
   });
 });

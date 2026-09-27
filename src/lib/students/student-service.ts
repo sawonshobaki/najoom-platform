@@ -23,7 +23,8 @@ export type StudentServiceErrorCode =
   | "section_inactive"
   | "student_not_found"
   | "student_inactive"
-  | "student_already_in_section";
+  | "student_already_in_section"
+  | "student_section_changed";
 
 export class StudentServiceError extends Error {
   constructor(
@@ -44,106 +45,87 @@ export type CreateStudentInput = {
 
 export type ListStudentsInput = {
   gradeId?: string;
-
-  /**
-   * string = شعبة محددة
-   * null = طالبات غير مرتبطات بأي شعبة
-   * undefined = كل الشعب
-   */
   sectionId?: string | null;
-
   isActive?: boolean;
   search?: string;
   page?: number;
   pageSize?: number;
 };
 
-function normalizeUsername(
-  username: string,
-): string {
-  return username.trim();
+const studentSectionSelect = {
+  id: true,
+  studentCode: true,
+  fullName: true,
+  currentSectionId: true,
+  isActive: true,
+} as const;
+
+const studentWithUserSelect = {
+  ...studentSectionSelect,
+  user: {
+    select: {
+      id: true,
+      username: true,
+      role: true,
+      isActive: true,
+    },
+  },
+} as const;
+
+function normalizeUsername(value: string): string {
+  return value.trim();
 }
 
-function normalizeStudentCode(
-  studentCode: string,
-): string {
-  return studentCode.trim().toUpperCase();
+function normalizeStudentCode(value: string): string {
+  return value.trim().toUpperCase();
 }
 
-function normalizeFullName(
-  fullName: string,
-): string {
-  return fullName.trim();
+function normalizeFullName(value: string): string {
+  return value.trim();
 }
 
 function validateStudentIdentity(input: {
   username: string;
   studentCode: string;
   fullName: string;
-}) {
+}): void {
   if (
     input.username.length === 0 ||
     input.username.length > MAX_USERNAME_LENGTH
   ) {
-    throw new StudentServiceError(
-      "invalid_username",
-    );
+    throw new StudentServiceError("invalid_username");
   }
 
   if (
     input.studentCode.length === 0 ||
-    input.studentCode.length >
-      MAX_STUDENT_CODE_LENGTH
+    input.studentCode.length > MAX_STUDENT_CODE_LENGTH
   ) {
-    throw new StudentServiceError(
-      "invalid_student_code",
-    );
+    throw new StudentServiceError("invalid_student_code");
   }
 
   if (
     input.fullName.length === 0 ||
     input.fullName.length > MAX_FULL_NAME_LENGTH
   ) {
-    throw new StudentServiceError(
-      "invalid_full_name",
-    );
+    throw new StudentServiceError("invalid_full_name");
   }
 }
 
-/**
- * يفحص أخطاء Prisma بدون الاعتماد على الشكل الداخلي
- * الكامل للخطأ.
- *
- * نستخدمه لمعالجة تعارضات UNIQUE التي قد تظهر
- * عند وصول طلبين متزامنين.
- */
 function isPrismaErrorWithCode(
   error: unknown,
   code: string,
 ): boolean {
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("code" in error)
-  ) {
-    return false;
-  }
-
-  return error.code === code;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
 }
 
-/**
- * يتحقق من أن الشعبة موجودة ومفعلة.
- *
- * لا نسمح بإضافة طالبة إلى شعبة معطلة.
- */
-async function requireActiveSection(
-  sectionId: string,
-) {
+async function requireActiveSection(sectionId: string) {
   const section = await prisma.section.findUnique({
-    where: {
-      id: sectionId,
-    },
+    where: { id: sectionId },
     select: {
       id: true,
       isActive: true,
@@ -151,39 +133,27 @@ async function requireActiveSection(
   });
 
   if (!section) {
-    throw new StudentServiceError(
-      "section_not_found",
-    );
+    throw new StudentServiceError("section_not_found");
   }
 
   if (!section.isActive) {
-    throw new StudentServiceError(
-      "section_inactive",
-    );
+    throw new StudentServiceError("section_inactive");
   }
 
   return section;
 }
 
 /**
- * ينشئ حساب الطالبة وملفها الدراسي داخل transaction واحدة.
- *
- * إذا فشل إنشاء أي جزء، لا يبقى حساب ناقص في قاعدة البيانات.
+ * إنشاء حساب الطالبة وملفها الدراسي في معاملة واحدة.
  */
 export async function createStudent(
   input: CreateStudentInput,
 ) {
-  const username = normalizeUsername(
-    input.username,
-  );
-
+  const username = normalizeUsername(input.username);
   const studentCode = normalizeStudentCode(
     input.studentCode,
   );
-
-  const fullName = normalizeFullName(
-    input.fullName,
-  );
+  const fullName = normalizeFullName(input.fullName);
 
   validateStudentIdentity({
     username,
@@ -191,45 +161,27 @@ export async function createStudent(
     fullName,
   });
 
-  /**
-   * ننفذ Argon2 قبل فتح transaction حتى لا نبقي
-   * اتصال قاعدة البيانات مشغولًا أثناء hashing.
-   */
+  // ننفذ التشفير قبل فتح معاملة قاعدة البيانات.
   const passwordHash = await hashPassword(
     input.password,
   );
 
-  const sectionId =
-    input.sectionId?.trim() || null;
+  const sectionId = input.sectionId?.trim() || null;
 
   if (sectionId) {
     await requireActiveSection(sectionId);
   }
 
-  /**
-   * الفحص المبكر يعطي أخطاء أوضح في الحالة العادية.
-   *
-   * لكنه لا يكفي وحده لمنع race condition، لذلك تبقى
-   * قيود UNIQUE في قاعدة البيانات خط الدفاع النهائي.
-   */
+  // فحص مبكر للحصول على رسائل أخطاء واضحة.
   const [existingUser, existingStudent] =
     await Promise.all([
       prisma.user.findUnique({
-        where: {
-          username,
-        },
-        select: {
-          id: true,
-        },
+        where: { username },
+        select: { id: true },
       }),
-
       prisma.student.findUnique({
-        where: {
-          studentCode,
-        },
-        select: {
-          id: true,
-        },
+        where: { studentCode },
+        select: { id: true },
       }),
     ]);
 
@@ -245,111 +197,68 @@ export async function createStudent(
     );
   }
 
-  return prisma.$transaction(
-    async (transaction) => {
-      let user: {
-        id: string;
-        username: string;
-      };
+  // قيود UNIQUE تعالج أيضًا الطلبات المتزامنة.
+  return prisma.$transaction(async (transaction) => {
+    let user: {
+      id: string;
+      username: string;
+    };
 
-      try {
-        user = await transaction.user.create({
-          data: {
-            username,
-            passwordHash,
-            role: UserRole.STUDENT,
-            isActive: true,
-          },
-          select: {
-            id: true,
-            username: true,
-          },
-        });
-      } catch (error) {
-        /**
-         * قد ينجح الفحص المبكر في طلبين متزامنين.
-         *
-         * إذا سبق طلب آخر هذا الطلب وأنشأ username نفسه،
-         * يحول P2002 إلى خطأ خدمة واضح بدل تسريب خطأ Prisma.
-         */
-        if (
-          isPrismaErrorWithCode(
-            error,
-            "P2002",
-          )
-        ) {
-          throw new StudentServiceError(
-            "username_already_exists",
-          );
-        }
-
-        throw error;
+    try {
+      user = await transaction.user.create({
+        data: {
+          username,
+          passwordHash,
+          role: UserRole.STUDENT,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          username: true,
+        },
+      });
+    } catch (error) {
+      if (isPrismaErrorWithCode(error, "P2002")) {
+        throw new StudentServiceError(
+          "username_already_exists",
+        );
       }
 
-      try {
-        return await transaction.student.create({
-          data: {
-            userId: user.id,
-            studentCode,
-            fullName,
-            currentSectionId: sectionId,
-            isActive: true,
-          },
-          select: {
-            id: true,
-            studentCode: true,
-            fullName: true,
-            currentSectionId: true,
-            isActive: true,
-            user: {
-              select: {
-                id: true,
-                username: true,
-                role: true,
-                isActive: true,
-              },
-            },
-          },
-        });
-      } catch (error) {
-        /**
-         * نفس الحماية السابقة، ولكن لقيد studentCode.
-         *
-         * transaction ستتراجع بالكامل عند الخطأ،
-         * وبالتالي لن يبقى User بدون Student.
-         */
-        if (
-          isPrismaErrorWithCode(
-            error,
-            "P2002",
-          )
-        ) {
-          throw new StudentServiceError(
-            "student_code_already_exists",
-          );
-        }
+      throw error;
+    }
 
-        throw error;
+    try {
+      return await transaction.student.create({
+        data: {
+          userId: user.id,
+          studentCode,
+          fullName,
+          currentSectionId: sectionId,
+          isActive: true,
+        },
+        select: studentWithUserSelect,
+      });
+    } catch (error) {
+      if (isPrismaErrorWithCode(error, "P2002")) {
+        throw new StudentServiceError(
+          "student_code_already_exists",
+        );
       }
-    },
-  );
+
+      throw error;
+    }
+  });
 }
 
 /**
- * يضيف طالبة غير مرتبطة حاليًا بشعبة إلى شعبة مفعلة.
- *
- * لا يسمح بالنقل المباشر بين الشعب.
- * يجب إزالة الطالبة من شعبتها الحالية أولًا.
- *
- * التحديث المشروط أدناه يمنع طلبين متزامنين من
- * تعيين الطالبة إلى شعبتين مختلفتين.
+ * إضافة طالبة غير مرتبطة بشعبة إلى شعبة نشطة.
+ * النقل المباشر بين الشعب ممنوع.
  */
 export async function addStudentToSection(
   studentId: string,
   sectionId: string,
 ) {
-  const normalizedSectionId =
-    sectionId.trim();
+  const normalizedSectionId = sectionId.trim();
 
   if (!normalizedSectionId) {
     throw new StudentServiceError(
@@ -357,21 +266,16 @@ export async function addStudentToSection(
     );
   }
 
-  await requireActiveSection(
-    normalizedSectionId,
-  );
+  await requireActiveSection(normalizedSectionId);
 
-  const student =
-    await prisma.student.findUnique({
-      where: {
-        id: studentId,
-      },
-      select: {
-        id: true,
-        isActive: true,
-        currentSectionId: true,
-      },
-    });
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      id: true,
+      isActive: true,
+      currentSectionId: true,
+    },
+  });
 
   if (!student) {
     throw new StudentServiceError(
@@ -385,91 +289,46 @@ export async function addStudentToSection(
     );
   }
 
-  /**
-   * إذا كانت في نفس الشعبة بالفعل،
-   * لا ننفذ تحديثًا غير ضروري.
-   */
+  // إذا كانت الطالبة في الشعبة المطلوبة بالفعل.
   if (
-    student.currentSectionId ===
-    normalizedSectionId
+    student.currentSectionId === normalizedSectionId
   ) {
     return prisma.student.findUniqueOrThrow({
-      where: {
-        id: student.id,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-      },
+      where: { id: student.id },
+      select: studentSectionSelect,
     });
   }
 
-  /**
-   * لا يوجد نقل مباشر بين الشعب.
-   */
-  if (student.currentSectionId) {
+  // لا نسمح بالنقل المباشر بين الشعب.
+  if (student.currentSectionId !== null) {
     throw new StudentServiceError(
       "student_already_in_section",
     );
   }
 
-  /**
-   * الحماية الذرية من race condition.
-   *
-   * قاعدة البيانات لن تنفذ التعيين إلا إذا كانت
-   * الطالبة ما تزال:
-   * - موجودة بهذا id
-   * - نشطة
-   * - غير مرتبطة بأي شعبة
-   *
-   * لذلك إذا وصل طلبان متزامنان لشعبتين مختلفتين،
-   * سينجح واحد فقط في تغيير currentSectionId.
-   */
-  const assignmentResult =
-    await prisma.student.updateMany({
-      where: {
-        id: student.id,
-        isActive: true,
-        currentSectionId: null,
-      },
-      data: {
-        currentSectionId:
-          normalizedSectionId,
-      },
-    });
+  // تحديث مشروط يمنع تعيين الطالبة إلى شعبتين.
+  const assignment = await prisma.student.updateMany({
+    where: {
+      id: student.id,
+      isActive: true,
+      currentSectionId: null,
+    },
+    data: {
+      currentSectionId: normalizedSectionId,
+    },
+  });
 
-  /**
-   * تم التعيين بنجاح.
-   */
-  if (assignmentResult.count === 1) {
+  if (assignment.count === 1) {
     return prisma.student.findUniqueOrThrow({
-      where: {
-        id: student.id,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-      },
+      where: { id: student.id },
+      select: studentSectionSelect,
     });
   }
 
-  /**
-   * إذا لم يتم التحديث، فقد تغيرت حالة الطالبة
-   * بين القراءة الأولى ومحاولة الكتابة.
-   *
-   * نعيد قراءة الحالة الفعلية بدل تخمين السبب.
-   */
+  // نعيد القراءة لمعرفة سبب فشل التحديث المشروط.
   const currentStudent =
     await prisma.student.findUnique({
-      where: {
-        id: student.id,
-      },
+      where: { id: student.id },
       select: {
         id: true,
         isActive: true,
@@ -489,72 +348,45 @@ export async function addStudentToSection(
     );
   }
 
-  /**
-   * ربما سبقنا طلب متزامن آخر وعيّن الطالبة
-   * إلى نفس الشعبة المطلوبة.
-   *
-   * نعامل ذلك كنجاح idempotent.
-   */
+  // طلب متزامن أضافها إلى الشعبة نفسها.
   if (
     currentStudent.currentSectionId ===
     normalizedSectionId
   ) {
     return prisma.student.findUniqueOrThrow({
-      where: {
-        id: currentStudent.id,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-      },
+      where: { id: currentStudent.id },
+      select: studentSectionSelect,
     });
   }
 
-  /**
-   * إذا أصبحت في شعبة مختلفة، فقد فاز طلب
-   * متزامن آخر بالتعيين.
-   *
-   * نحافظ على قاعدة منع النقل المباشر.
-   */
-  if (currentStudent.currentSectionId) {
+  // طلب آخر أضافها إلى شعبة مختلفة.
+  if (currentStudent.currentSectionId !== null) {
     throw new StudentServiceError(
       "student_already_in_section",
     );
   }
 
-  /**
-   * updateMany أعاد صفرًا، لكن إعادة القراءة تقول
-   * إن الطالبة ما تزال نشطة وغير مرتبطة بشعبة.
-   *
-   * هذه ليست حالة أعمال متوقعة، لذلك لا نخفيها
-   * خلف StudentServiceError غير صحيح.
-   */
   throw new Error(
     "Student section assignment failed unexpectedly.",
   );
 }
 
 /**
- * يزيل الطالبة من شعبتها الحالية فقط.
+ * إزالة الطالبة من شعبتها دون حذف حسابها أو نتائجها.
  *
- * لا يحذف الحساب أو الملف الدراسي أو النتائج.
+ * لا يُسمح لطلب إزالة قديم بمسح تعيين جديد
+ * إلى شعبة مختلفة.
  */
 export async function removeStudentFromSection(
   studentId: string,
 ) {
-  const student =
-    await prisma.student.findUnique({
-      where: {
-        id: studentId,
-      },
-      select: {
-        id: true,
-        currentSectionId: true,
-      },
-    });
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      id: true,
+      currentSectionId: true,
+    },
+  });
 
   if (!student) {
     throw new StudentServiceError(
@@ -562,63 +394,96 @@ export async function removeStudentFromSection(
     );
   }
 
-  if (!student.currentSectionId) {
+  // الطالبة غير مرتبطة بأي شعبة بالفعل.
+  if (student.currentSectionId === null) {
     return prisma.student.findUniqueOrThrow({
-      where: {
-        id: student.id,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-      },
+      where: { id: student.id },
+      select: studentSectionSelect,
     });
   }
 
-  return prisma.student.update({
+  const originalSectionId =
+    student.currentSectionId;
+
+  // لا نحذف التعيين إلا إذا بقيت الشعبة كما كانت.
+  const removal = await prisma.student.updateMany({
     where: {
       id: student.id,
+      currentSectionId: originalSectionId,
     },
     data: {
       currentSectionId: null,
     },
-    select: {
-      id: true,
-      studentCode: true,
-      fullName: true,
-      currentSectionId: true,
-      isActive: true,
-    },
   });
+
+  if (removal.count === 1) {
+    return prisma.student.findUniqueOrThrow({
+      where: { id: student.id },
+      select: studentSectionSelect,
+    });
+  }
+
+  // فشل الشرط؛ نتحقق مما حدث.
+  const currentStudent =
+    await prisma.student.findUnique({
+      where: { id: student.id },
+      select: {
+        id: true,
+        currentSectionId: true,
+      },
+    });
+
+  if (!currentStudent) {
+    throw new StudentServiceError(
+      "student_not_found",
+    );
+  }
+
+  // طلب آخر أزالها بالفعل.
+  if (currentStudent.currentSectionId === null) {
+    return prisma.student.findUniqueOrThrow({
+      where: { id: currentStudent.id },
+      select: studentSectionSelect,
+    });
+  }
+
+  // تغيرت الشعبة؛ نحافظ على التعيين الجديد.
+  if (
+    currentStudent.currentSectionId !==
+    originalSectionId
+  ) {
+    throw new StudentServiceError(
+      "student_section_changed",
+    );
+  }
+
+  // فشل غير متوقع؛ لا نبلّغ عن نجاح وهمي.
+  throw new Error(
+    "Student section removal failed unexpectedly.",
+  );
 }
 
 /**
- * يغيّر حالة Student وUser معًا.
- *
- * عند تعطيل الحساب تلغى الجلسات النشطة أيضًا.
+ * تفعيل حساب الطالبة أو تعطيله.
+ * تُحدّث حالة User وStudent داخل معاملة واحدة.
  */
 export async function setStudentActiveState(
   studentId: string,
   isActive: boolean,
 ) {
-  const student =
-    await prisma.student.findUnique({
-      where: {
-        id: studentId,
-      },
-      select: {
-        id: true,
-        userId: true,
-        isActive: true,
-        user: {
-          select: {
-            isActive: true,
-          },
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: {
+      id: true,
+      userId: true,
+      isActive: true,
+      user: {
+        select: {
+          isActive: true,
         },
       },
-    });
+    },
+  });
 
   if (!student) {
     throw new StudentServiceError(
@@ -626,125 +491,73 @@ export async function setStudentActiveState(
     );
   }
 
-  /**
-   * لا نكتب إلى قاعدة البيانات إذا كانت
-   * الحالتان مطابقتين أصلًا للقيمة المطلوبة.
-   */
+  // لا نفتح معاملة إذا كانت الحالتان صحيحتين.
   if (
     student.isActive === isActive &&
     student.user.isActive === isActive
   ) {
     return prisma.student.findUniqueOrThrow({
-      where: {
-        id: student.id,
-      },
-      select: {
-        id: true,
-        studentCode: true,
-        fullName: true,
-        currentSectionId: true,
-        isActive: true,
-        user: {
-          select: {
-            id: true,
-            username: true,
-            role: true,
-            isActive: true,
-          },
-        },
-      },
+      where: { id: student.id },
+      select: studentWithUserSelect,
     });
   }
 
   const now = new Date();
 
-  return prisma.$transaction(
-    async (transaction) => {
-      await transaction.user.update({
+  return prisma.$transaction(async (transaction) => {
+    await transaction.user.update({
+      where: {
+        id: student.userId,
+      },
+      data: {
+        isActive,
+      },
+    });
+
+    const updatedStudent =
+      await transaction.student.update({
         where: {
-          id: student.userId,
+          id: student.id,
         },
         data: {
           isActive,
         },
+        select: studentWithUserSelect,
       });
 
-      const updatedStudent =
-        await transaction.student.update({
-          where: {
-            id: student.id,
-          },
-          data: {
-            isActive,
-          },
-          select: {
-            id: true,
-            studentCode: true,
-            fullName: true,
-            currentSectionId: true,
-            isActive: true,
-            user: {
-              select: {
-                id: true,
-                username: true,
-                role: true,
-                isActive: true,
-              },
-            },
-          },
-        });
+    // عند التعطيل نلغي الجلسات النشطة.
+    if (!isActive) {
+      await transaction.session.updateMany({
+        where: {
+          userId: student.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+          revokeReason: "student_deactivated",
+        },
+      });
+    }
 
-      /**
-       * الجلسات القديمة لا تعاد عند إعادة تفعيل الحساب.
-       */
-      if (!isActive) {
-        await transaction.session.updateMany({
-          where: {
-            userId: student.userId,
-            revokedAt: null,
-          },
-          data: {
-            revokedAt: now,
-            revokeReason:
-              "student_deactivated",
-          },
-        });
-      }
-
-      return updatedStudent;
-    },
-  );
+    return updatedStudent;
+  });
 }
 
-/**
- * يعطل الطالبة وحسابها.
- */
 export function deactivateStudent(
   studentId: string,
 ) {
-  return setStudentActiveState(
-    studentId,
-    false,
-  );
+  return setStudentActiveState(studentId, false);
 }
 
-/**
- * يعيد تفعيل الطالبة.
- *
- * الجلسات القديمة الملغاة لا تعاد.
- */
 export function activateStudent(
   studentId: string,
 ) {
-  return setStudentActiveState(
-    studentId,
-    true,
-  );
+  return setStudentActiveState(studentId, true);
 }
 
 /**
- * يجلب الطالبات لقائمة الإدارة مع الفلاتر
- * والترقيم بالصفحات.
+ * عرض الطالبات للإدارة مع البحث والتصفية
+ * وتقسيم النتائج إلى صفحات.
  */
 export async function listStudents(
   input: ListStudentsInput = {},
@@ -802,21 +615,14 @@ export async function listStudents(
     where.isActive = input.isActive;
   }
 
-  /**
-   * null تعني الطالبات غير المرتبطات بأي شعبة.
-   */
+  // null يعني الطالبات غير المرتبطات بشعبة.
   if (sectionId === null) {
     where.currentSectionId = null;
   } else if (sectionId) {
     where.currentSectionId = sectionId;
   }
 
-  /**
-   * الصف مشتق من الشعبة الحالية.
-   *
-   * الطالبة غير المرتبطة بشعبة لا تظهر
-   * داخل فلتر صف محدد.
-   */
+  // الصف الدراسي مشتق من الشعبة الحالية.
   if (gradeId) {
     where.currentSection = {
       is: {
@@ -859,12 +665,8 @@ export async function listStudents(
         skip,
         take: pageSize,
         orderBy: [
-          {
-            fullName: "asc",
-          },
-          {
-            studentCode: "asc",
-          },
+          { fullName: "asc" },
+          { studentCode: "asc" },
         ],
         select: {
           id: true,
@@ -895,7 +697,6 @@ export async function listStudents(
           },
         },
       }),
-
       prisma.student.count({
         where,
       }),
@@ -910,9 +711,7 @@ export async function listStudents(
       totalPages:
         totalCount === 0
           ? 0
-          : Math.ceil(
-              totalCount / pageSize,
-            ),
+          : Math.ceil(totalCount / pageSize),
     },
   };
 }
