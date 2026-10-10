@@ -1,6 +1,12 @@
 import Link from "next/link";
 
-import { listStudents } from "@/lib/students/student-service";
+import {
+  listStudents,
+} from "@/lib/students/student-service";
+
+import {
+  StudentActiveButton,
+} from "./student-active-button";
 
 type AdminStudentsPageProps = {
   searchParams: Promise<{
@@ -15,9 +21,7 @@ const PAGE_SIZE = 20;
 function parsePage(
   value: string | undefined,
 ): number {
-  if (!value) {
-    return 1;
-  }
+  if (!value) return 1;
 
   const page = Number(value);
 
@@ -50,7 +54,8 @@ function buildStudentsUrl(input: {
   status?: string;
   page?: number;
 }) {
-  const params = new URLSearchParams();
+  const params =
+    new URLSearchParams();
 
   if (input.search) {
     params.set(
@@ -79,7 +84,8 @@ function buildStudentsUrl(input: {
     );
   }
 
-  const query = params.toString();
+  const query =
+    params.toString();
 
   return query
     ? `/admin/students?${query}`
@@ -89,7 +95,8 @@ function buildStudentsUrl(input: {
 export default async function AdminStudentsPage({
   searchParams,
 }: AdminStudentsPageProps) {
-  const params = await searchParams;
+  const params =
+    await searchParams;
 
   const search =
     params.search?.trim() ?? "";
@@ -103,13 +110,14 @@ export default async function AdminStudentsPage({
   const isActive =
     parseActiveState(status);
 
-  const result = await listStudents({
-    search:
-      search || undefined,
-    isActive,
-    page: requestedPage,
-    pageSize: PAGE_SIZE,
-  });
+  const result =
+    await listStudents({
+      search:
+        search || undefined,
+      isActive,
+      page: requestedPage,
+      pageSize: PAGE_SIZE,
+    });
 
   const {
     students,
@@ -135,7 +143,7 @@ export default async function AdminStudentsPage({
   return (
     <main className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm font-medium text-[var(--najoom-gold)]">
               منصة نجوم
@@ -147,17 +155,26 @@ export default async function AdminStudentsPage({
 
             <p className="mt-2 text-sm leading-6 text-slate-600">
               عرض الطالبات والبحث عنهن
-              ومتابعة حالة الحساب والشعبة
-              الحالية.
+              ومتابعة حالة الحساب
+              والشعبة الحالية.
             </p>
           </div>
 
-          <Link
-            href="/admin"
-            className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            العودة إلى لوحة الإدارة
-          </Link>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/admin/students/new"
+              className="inline-flex items-center justify-center rounded-xl bg-[var(--najoom-navy)] px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+            >
+              إضافة طالبة جديدة
+            </Link>
+
+            <Link
+              href="/admin"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              العودة إلى لوحة الإدارة
+            </Link>
+          </div>
         </div>
 
         <section className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm sm:p-6">
@@ -253,9 +270,7 @@ export default async function AdminStudentsPage({
               <p className="text-sm text-slate-500">
                 الصفحة{" "}
                 {currentPage} من{" "}
-                {
-                  pagination.totalPages
-                }
+                {pagination.totalPages}
               </p>
             )}
           </div>
@@ -274,12 +289,14 @@ export default async function AdminStudentsPage({
               </h3>
 
               <p className="mt-2 text-sm text-slate-500">
-                جرّبي تغيير كلمات البحث
-                أو خيارات التصفية.
+                يمكنك إضافة أول طالبة
+                من الزر الموجود أعلى
+                الصفحة.
               </p>
             </div>
           ) : (
             <>
+              {/* نسخة سطح المكتب والتابلت */}
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-right">
                   <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
@@ -307,145 +324,179 @@ export default async function AdminStudentsPage({
                       <th className="px-6 py-4">
                         الحالة
                       </th>
+
+                      <th className="px-6 py-4">
+                        الإجراءات
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-slate-100">
                     {students.map(
-                      (student) => (
-                        <tr
-                          key={
-                            student.id
-                          }
-                          className="text-sm text-slate-700"
-                        >
-                          <td className="px-6 py-4 font-semibold text-[var(--najoom-navy)]">
-                            {
-                              student.fullName
+                      (student) => {
+                        const accountIsActive =
+                          student.isActive &&
+                          student.user
+                            .isActive;
+
+                        return (
+                          <tr
+                            key={
+                              student.id
                             }
-                          </td>
-
-                          <td className="px-6 py-4">
-                            {
-                              student.studentCode
-                            }
-                          </td>
-
-                          <td className="px-6 py-4">
-                            {
-                              student.user
-                                .username
-                            }
-                          </td>
-
-                          <td className="px-6 py-4">
-                            {student
-                              .currentSection
-                              ?.grade
-                              .name ??
-                              "—"}
-                          </td>
-
-                          <td className="px-6 py-4">
-                            {student
-                              .currentSection
-                              ?.name ??
-                              "غير محددة"}
-                          </td>
-
-                          <td className="px-6 py-4">
-                            <StudentStatusBadge
-                              isActive={
-                                student.isActive &&
-                                student
-                                  .user
-                                  .isActive
+                            className="text-sm text-slate-700"
+                          >
+                            <td className="px-6 py-4 font-semibold text-[var(--najoom-navy)]">
+                              {
+                                student.fullName
                               }
-                            />
-                          </td>
-                        </tr>
-                      ),
+                            </td>
+
+                            <td className="px-6 py-4">
+                              {
+                                student.studentCode
+                              }
+                            </td>
+
+                            <td className="px-6 py-4">
+                              {
+                                student.user
+                                  .username
+                              }
+                            </td>
+
+                            <td className="px-6 py-4">
+                              {student
+                                .currentSection
+                                ?.grade
+                                .name ??
+                                "—"}
+                            </td>
+
+                            <td className="px-6 py-4">
+                              {student
+                                .currentSection
+                                ?.name ??
+                                "غير محددة"}
+                            </td>
+
+                            <td className="px-6 py-4">
+                              <StudentStatusBadge
+                                isActive={
+                                  accountIsActive
+                                }
+                              />
+                            </td>
+
+                            <td className="px-6 py-4">
+                              <StudentActiveButton
+                                studentId={
+                                  student.id
+                                }
+                                isActive={
+                                  accountIsActive
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      },
                     )}
                   </tbody>
                 </table>
               </div>
 
+              {/* نسخة الهاتف */}
               <div className="divide-y divide-slate-100 md:hidden">
                 {students.map(
-                  (student) => (
-                    <article
-                      key={
-                        student.id
-                      }
-                      className="p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-bold text-[var(--najoom-navy)]">
-                            {
-                              student.fullName
+                  (student) => {
+                    const accountIsActive =
+                      student.isActive &&
+                      student.user
+                        .isActive;
+
+                    return (
+                      <article
+                        key={student.id}
+                        className="p-5"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-bold text-[var(--najoom-navy)]">
+                              {
+                                student.fullName
+                              }
+                            </h3>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              {
+                                student.studentCode
+                              }
+                            </p>
+                          </div>
+
+                          <StudentStatusBadge
+                            isActive={
+                              accountIsActive
                             }
-                          </h3>
+                          />
+                        </div>
 
-                          <p className="mt-1 text-xs text-slate-500">
-                            {
-                              student.studentCode
+                        <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <dt className="text-xs text-slate-400">
+                              اسم المستخدم
+                            </dt>
+
+                            <dd className="mt-1 text-slate-700">
+                              {
+                                student.user
+                                  .username
+                              }
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-xs text-slate-400">
+                              الصف
+                            </dt>
+
+                            <dd className="mt-1 text-slate-700">
+                              {student
+                                .currentSection
+                                ?.grade
+                                .name ??
+                                "—"}
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-xs text-slate-400">
+                              الشعبة
+                            </dt>
+
+                            <dd className="mt-1 text-slate-700">
+                              {student
+                                .currentSection
+                                ?.name ??
+                                "غير محددة"}
+                            </dd>
+                          </div>
+                        </dl>
+
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <StudentActiveButton
+                            studentId={
+                              student.id
                             }
-                          </p>
-                        </div>
-
-                        <StudentStatusBadge
-                          isActive={
-                            student.isActive &&
-                            student.user
-                              .isActive
-                          }
-                        />
-                      </div>
-
-                      <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <dt className="text-xs text-slate-400">
-                            اسم المستخدم
-                          </dt>
-
-                          <dd className="mt-1 text-slate-700">
-                            {
-                              student.user
-                                .username
+                            isActive={
+                              accountIsActive
                             }
-                          </dd>
+                          />
                         </div>
-
-                        <div>
-                          <dt className="text-xs text-slate-400">
-                            الصف
-                          </dt>
-
-                          <dd className="mt-1 text-slate-700">
-                            {student
-                              .currentSection
-                              ?.grade
-                              .name ??
-                              "—"}
-                          </dd>
-                        </div>
-
-                        <div>
-                          <dt className="text-xs text-slate-400">
-                            الشعبة
-                          </dt>
-
-                          <dd className="mt-1 text-slate-700">
-                            {student
-                              .currentSection
-                              ?.name ??
-                              "غير محددة"}
-                          </dd>
-                        </div>
-                      </dl>
-                    </article>
-                  ),
+                      </article>
+                    );
+                  },
                 )}
               </div>
             </>
@@ -475,9 +526,7 @@ export default async function AdminStudentsPage({
 
               <span className="text-sm text-slate-500">
                 {currentPage} /{" "}
-                {
-                  pagination.totalPages
-                }
+                {pagination.totalPages}
               </span>
 
               {hasNextPage ? (

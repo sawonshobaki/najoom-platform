@@ -715,3 +715,27 @@ export async function listStudents(
     },
   };
 }
+export async function listActiveGradesAndSections() {
+  return prisma.grade.findMany({
+    orderBy: {
+      sortOrder: "asc",
+    },
+    select: {
+      id: true,
+      name: true,
+      sortOrder: true,
+      sections: {
+        where: {
+          isActive: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+}
