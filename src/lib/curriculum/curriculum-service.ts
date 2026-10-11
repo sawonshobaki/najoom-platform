@@ -2,6 +2,7 @@ import "server-only";
 
 import { requireAdmin } from "@/lib/auth/authorization";
 import { prisma } from "@/lib/db/prisma";
+import { lessonResourceSelect } from "./lesson-resource-service";
 
 export type CurriculumServiceErrorCode =
   | "invalid_request_body"
@@ -170,6 +171,10 @@ export async function listCurriculum() {
                   title: true,
                   description: true,
                   sortOrder: true,
+                  lessonResources: {
+                    orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+                    select: lessonResourceSelect,
+                  },
                   concepts: {
                     select: { id: true, title: true, description: true },
                   },

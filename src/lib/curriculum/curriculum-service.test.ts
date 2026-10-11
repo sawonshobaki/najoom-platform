@@ -76,6 +76,11 @@ describe("listCurriculum", () => {
     expect(query.select.sections).toBeUndefined();
     expect(units.select.lessons.select).toEqual({
       id: true, title: true, description: true, sortOrder: true,
+      lessonResources: {
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        select: { id: true, lessonId: true, title: true, url: true, type: true, language: true,
+          isFree: true, instructionsArabic: true, sortOrder: true, createdAt: true, updatedAt: true },
+      },
       concepts: { select: { id: true, title: true, description: true } },
       learningObjectives: { select: { id: true, title: true, description: true,
         skills: { select: { skill: { select: { id: true, name: true, description: true } } } },

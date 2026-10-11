@@ -5,6 +5,7 @@ import { SemesterForm } from "./semester-form";
 import { UnitForm } from "./unit-form";
 import { LessonForm } from "./lesson-form";
 import { LessonItems } from "./lesson-items";
+import { LessonResources } from "./lesson-resources";
 import { SkillsSection } from "./skills-section";
 
 export default async function AdminCurriculumPage() {
@@ -140,6 +141,7 @@ export default async function AdminCurriculumPage() {
                                           <LessonForm unitId={unit.id} lesson={lesson} />
                                         </details>
                                         <LessonItems lessonId={lesson.id} concepts={lesson.concepts} learningObjectives={lesson.learningObjectives} skills={skills} />
+                                        <LessonResources lessonId={lesson.id} resources={lesson.lessonResources} />
                                       </li>
                                     ))}
                                   </ol>

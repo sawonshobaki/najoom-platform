@@ -150,6 +150,13 @@ enum ResourceType {
   OTHER
 }
 
+enum LessonResourceType {
+  VIDEO
+  GAME
+  SIMULATION
+  ARTICLE
+}
+
 enum ResourceSource {
   MANUAL
   AI_SUGGESTED
@@ -362,10 +369,30 @@ model Lesson {
   learningObjectives LearningObjective[]
   questions          Question[]
   resources          Resource[]
+  lessonResources    LessonResource[]
 
   @@unique([unitId, sortOrder])
   @@index([unitId])
   @@map("lessons")
+}
+
+model LessonResource {
+  id                 String             @id @default(cuid())
+  lessonId           String
+  title              String
+  url                String
+  type               LessonResourceType
+  language           String
+  isFree             Boolean
+  instructionsArabic String?
+  sortOrder          Int
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+
+  @@index([lessonId, sortOrder])
+  @@map("lesson_resources")
 }
 
 model Concept {
