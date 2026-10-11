@@ -4,6 +4,7 @@ import { listCurriculum } from "@/lib/curriculum/curriculum-service";
 import { SemesterForm } from "./semester-form";
 import { UnitForm } from "./unit-form";
 import { LessonForm } from "./lesson-form";
+import { LessonItems } from "./lesson-items";
 
 export default async function AdminCurriculumPage() {
   const grades = await listCurriculum();
@@ -135,6 +136,7 @@ export default async function AdminCurriculumPage() {
                                           </summary>
                                           <LessonForm unitId={unit.id} lesson={lesson} />
                                         </details>
+                                        <LessonItems lessonId={lesson.id} concepts={lesson.concepts} learningObjectives={lesson.learningObjectives} />
                                       </li>
                                     ))}
                                   </ol>

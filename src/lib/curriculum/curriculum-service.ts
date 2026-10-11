@@ -170,6 +170,12 @@ export async function listCurriculum() {
                   title: true,
                   description: true,
                   sortOrder: true,
+                  concepts: {
+                    select: { id: true, title: true, description: true },
+                  },
+                  learningObjectives: {
+                    select: { id: true, title: true, description: true },
+                  },
                 },
               },
             },
@@ -403,5 +409,105 @@ export async function updateLesson(lessonId: string, input: LessonInput) {
     });
   } catch (error) {
     mapLessonWriteError(error);
+  }
+}
+
+export type LessonItemErrorCode =
+  | "invalid_request_body"
+  | "invalid_lesson_id"
+  | "lesson_not_found"
+  | "invalid_item_title"
+  | "invalid_item_description"
+  | "concept_not_found"
+  | "objective_not_found";
+
+export class LessonItemServiceError extends Error {
+  constructor(public readonly code: LessonItemErrorCode) {
+    super(code);
+    this.name = "LessonItemServiceError";
+  }
+}
+
+export type LessonItemInput = { title: string; description?: string | null };
+
+const lessonItemSelect = { id: true, lessonId: true, title: true, description: true } as const;
+
+function normalizeLessonItem(input: LessonItemInput) {
+  const title = input.title.trim();
+  if (!title || title.length > 150) throw new LessonItemServiceError("invalid_item_title");
+  if (input.description !== undefined && input.description !== null && typeof input.description !== "string") {
+    throw new LessonItemServiceError("invalid_item_description");
+  }
+  const description = input.description?.trim() || null;
+  if (description && description.length > 5000) throw new LessonItemServiceError("invalid_item_description");
+  return { title, ...(input.description !== undefined ? { description } : {}) };
+}
+
+async function requireExistingLesson(lessonId: string) {
+  const lesson = await prisma.lesson.findUnique({ where: { id: lessonId }, select: { id: true } });
+  if (!lesson) throw new LessonItemServiceError("lesson_not_found");
+}
+
+function mapLessonItemWriteError(error: unknown, notFound: "concept_not_found" | "objective_not_found"): never {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if (error.code === "P2003") throw new LessonItemServiceError("lesson_not_found");
+    if (error.code === "P2025") throw new LessonItemServiceError(notFound);
+  }
+  throw error;
+}
+
+export async function createConcept(input: LessonItemInput & { lessonId: string }) {
+  await requireAdmin();
+  const lessonId = input.lessonId.trim();
+  if (!lessonId) throw new LessonItemServiceError("invalid_lesson_id");
+  const data = normalizeLessonItem(input);
+  await requireExistingLesson(lessonId);
+  try {
+    return await prisma.concept.create({ data: { lessonId, ...data }, select: lessonItemSelect });
+  } catch (error) {
+    mapLessonItemWriteError(error, "concept_not_found");
+  }
+}
+
+export async function updateConcept(conceptId: string, input: LessonItemInput) {
+  await requireAdmin();
+  const id = conceptId.trim();
+  if (!id) throw new LessonItemServiceError("concept_not_found");
+  const data = normalizeLessonItem(input);
+  const concept = await prisma.concept.findUnique({ where: { id }, select: { lessonId: true } });
+  if (!concept) throw new LessonItemServiceError("concept_not_found");
+  await requireExistingLesson(concept.lessonId);
+  try {
+    return await prisma.concept.update({ where: { id }, data, select: lessonItemSelect });
+  } catch (error) {
+    mapLessonItemWriteError(error, "concept_not_found");
+  }
+}
+
+export async function createLearningObjective(input: LessonItemInput & { lessonId: string }) {
+  await requireAdmin();
+  const lessonId = input.lessonId.trim();
+  if (!lessonId) throw new LessonItemServiceError("invalid_lesson_id");
+  const data = normalizeLessonItem(input);
+  await requireExistingLesson(lessonId);
+  try {
+    return await prisma.learningObjective.create({ data: { lessonId, ...data }, select: lessonItemSelect });
+  } catch (error) {
+    mapLessonItemWriteError(error, "objective_not_found");
+  }
+}
+
+export async function updateLearningObjective(objectiveId: string, input: LessonItemInput) {
+  await requireAdmin();
+  const id = objectiveId.trim();
+  if (!id) throw new LessonItemServiceError("objective_not_found");
+  const data = normalizeLessonItem(input);
+  const objective = await prisma.learningObjective.findUnique({ where: { id }, select: { lessonId: true } });
+  if (!objective) throw new LessonItemServiceError("objective_not_found");
+  await requireExistingLesson(objective.lessonId);
+  try {
+    return await prisma.learningObjective.update({ where: { id }, data, select: lessonItemSelect });
+  } catch (error) {
+    mapLessonItemWriteError(error, "objective_not_found");
   }
 }
