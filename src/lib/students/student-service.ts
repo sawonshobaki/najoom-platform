@@ -739,3 +739,49 @@ export async function listActiveGradesAndSections() {
     },
   });
 }
+export async function deleteStudent(
+  studentId: string,
+) {
+  const normalizedStudentId =
+    studentId.trim();
+
+  if (!normalizedStudentId) {
+    throw new StudentServiceError(
+      "student_not_found",
+    );
+  }
+
+  const student =
+    await prisma.student.findUnique({
+      where: {
+        id: normalizedStudentId,
+      },
+
+      select: {
+        id: true,
+        userId: true,
+        studentCode: true,
+        fullName: true,
+      },
+    });
+
+  if (!student) {
+    throw new StudentServiceError(
+      "student_not_found",
+    );
+  }
+
+  await prisma.user.delete({
+    where: {
+      id: student.userId,
+    },
+  });
+
+  return {
+    id: student.id,
+    studentCode:
+      student.studentCode,
+    fullName:
+      student.fullName,
+  };
+}

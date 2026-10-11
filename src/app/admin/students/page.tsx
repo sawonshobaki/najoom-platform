@@ -8,6 +8,14 @@ import {
   StudentActiveButton,
 } from "./student-active-button";
 
+import {
+  StudentDeleteButton,
+} from "./student-delete-button";
+
+import {
+  StudentSectionRemoveButton,
+} from "./student-section-remove-button";
+
 type AdminStudentsPageProps = {
   searchParams: Promise<{
     search?: string;
@@ -21,7 +29,9 @@ const PAGE_SIZE = 20;
 function parsePage(
   value: string | undefined,
 ): number {
-  if (!value) return 1;
+  if (!value) {
+    return 1;
+  }
 
   const page = Number(value);
 
@@ -296,7 +306,7 @@ export default async function AdminStudentsPage({
             </div>
           ) : (
             <>
-              {/* نسخة سطح المكتب والتابلت */}
+              {/* نسخة سطح المكتب */}
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-right">
                   <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
@@ -389,14 +399,38 @@ export default async function AdminStudentsPage({
                             </td>
 
                             <td className="px-6 py-4">
-                              <StudentActiveButton
-                                studentId={
-                                  student.id
-                                }
-                                isActive={
-                                  accountIsActive
-                                }
-                              />
+                              <div className="flex flex-col items-start gap-2">
+                                <StudentActiveButton
+                                  studentId={
+                                    student.id
+                                  }
+                                  isActive={
+                                    accountIsActive
+                                  }
+                                />
+
+                                {student.currentSection ? (
+                                  <StudentSectionRemoveButton
+                                    studentId={
+                                      student.id
+                                    }
+                                    sectionName={
+                                      student
+                                        .currentSection
+                                        .name
+                                    }
+                                  />
+                                ) : null}
+
+                                <StudentDeleteButton
+                                  studentId={
+                                    student.id
+                                  }
+                                  studentName={
+                                    student.fullName
+                                  }
+                                />
+                              </div>
                             </td>
                           </tr>
                         );
@@ -485,14 +519,38 @@ export default async function AdminStudentsPage({
                         </dl>
 
                         <div className="mt-4 border-t border-slate-100 pt-4">
-                          <StudentActiveButton
-                            studentId={
-                              student.id
-                            }
-                            isActive={
-                              accountIsActive
-                            }
-                          />
+                          <div className="flex flex-wrap gap-2">
+                            <StudentActiveButton
+                              studentId={
+                                student.id
+                              }
+                              isActive={
+                                accountIsActive
+                              }
+                            />
+
+                            {student.currentSection ? (
+                              <StudentSectionRemoveButton
+                                studentId={
+                                  student.id
+                                }
+                                sectionName={
+                                  student
+                                    .currentSection
+                                    .name
+                                }
+                              />
+                            ) : null}
+
+                            <StudentDeleteButton
+                              studentId={
+                                student.id
+                              }
+                              studentName={
+                                student.fullName
+                              }
+                            />
+                          </div>
                         </div>
                       </article>
                     );
