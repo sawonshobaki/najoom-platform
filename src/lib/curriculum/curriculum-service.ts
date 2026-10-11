@@ -161,6 +161,7 @@ export async function listCurriculum() {
             select: {
               id: true,
               title: true,
+              description: true,
               sortOrder: true,
               lessons: {
                 orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
@@ -176,4 +177,117 @@ export async function listCurriculum() {
       },
     },
   });
+}
+
+export type UnitServiceErrorCode =
+  | "invalid_request_body"
+  | "invalid_semester_id"
+  | "semester_not_found"
+  | "invalid_unit_title"
+  | "invalid_unit_description"
+  | "invalid_sort_order"
+  | "unit_not_found"
+  | "unit_order_conflict";
+
+export class UnitServiceError extends Error {
+  constructor(public readonly code: UnitServiceErrorCode) {
+    super(code);
+    this.name = "UnitServiceError";
+  }
+}
+
+export type UnitInput = {
+  title: string;
+  description?: string | null;
+  sortOrder: number;
+};
+
+const unitSelect = {
+  id: true,
+  semesterId: true,
+  title: true,
+  description: true,
+  sortOrder: true,
+} as const;
+
+function normalizeUnitInput(input: UnitInput) {
+  const title = input.title.trim();
+  if (!title || title.length > 150) {
+    throw new UnitServiceError("invalid_unit_title");
+  }
+  if (input.description !== undefined && input.description !== null && typeof input.description !== "string") {
+    throw new UnitServiceError("invalid_unit_description");
+  }
+  const description = input.description?.trim() || null;
+  if (description && description.length > 5000) {
+    throw new UnitServiceError("invalid_unit_description");
+  }
+  if (!Number.isInteger(input.sortOrder) || input.sortOrder < 1 || input.sortOrder > 2_147_483_647) {
+    throw new UnitServiceError("invalid_sort_order");
+  }
+  // الوصف المحذوف من PATCH يبقى كما هو؛ null أو النص الفارغ يمسحانه.
+  return {
+    title,
+    sortOrder: input.sortOrder,
+    ...(input.description !== undefined ? { description } : {}),
+  };
+}
+
+async function requireSemester(semesterId: string) {
+  const semester = await prisma.semester.findUnique({
+    where: { id: semesterId },
+    select: { id: true },
+  });
+  if (!semester) {
+    throw new UnitServiceError("semester_not_found");
+  }
+}
+
+function mapUnitWriteError(error: unknown): never {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if (error.code === "P2002") throw new UnitServiceError("unit_order_conflict");
+    if (error.code === "P2003") throw new UnitServiceError("semester_not_found");
+    if (error.code === "P2025") throw new UnitServiceError("unit_not_found");
+  }
+  throw error;
+}
+
+export async function createUnit(input: UnitInput & { semesterId: string }) {
+  await requireAdmin();
+  const semesterId = input.semesterId.trim();
+  if (!semesterId) throw new UnitServiceError("invalid_semester_id");
+  const data = normalizeUnitInput(input);
+  await requireSemester(semesterId);
+
+  try {
+    return await prisma.unit.create({
+      data: { semesterId, ...data },
+      select: unitSelect,
+    });
+  } catch (error) {
+    mapUnitWriteError(error);
+  }
+}
+
+export async function updateUnit(unitId: string, input: UnitInput) {
+  await requireAdmin();
+  const id = unitId.trim();
+  if (!id) throw new UnitServiceError("unit_not_found");
+  const data = normalizeUnitInput(input);
+  const unit = await prisma.unit.findUnique({
+    where: { id },
+    select: { semesterId: true },
+  });
+  if (!unit) throw new UnitServiceError("unit_not_found");
+  await requireSemester(unit.semesterId);
+
+  try {
+    return await prisma.unit.update({
+      where: { id },
+      data,
+      select: unitSelect,
+    });
+  } catch (error) {
+    mapUnitWriteError(error);
+  }
 }

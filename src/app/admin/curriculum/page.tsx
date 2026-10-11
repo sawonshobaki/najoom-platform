@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { listCurriculum } from "@/lib/curriculum/curriculum-service";
 import { SemesterForm } from "./semester-form";
+import { UnitForm } from "./unit-form";
 
 export default async function AdminCurriculumPage() {
   const grades = await listCurriculum();
@@ -76,6 +77,13 @@ export default async function AdminCurriculumPage() {
                           <SemesterForm gradeId={grade.id} semester={semester} />
                         </details>
 
+                        <details className="mt-3 rounded-xl border border-slate-200 p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">
+                            إضافة وحدة
+                          </summary>
+                          <UnitForm semesterId={semester.id} />
+                        </details>
+
                         {semester.units.length === 0 ? (
                           <p className="mt-3 text-sm text-slate-500">
                             لا توجد وحدات مسجلة لهذا الفصل الدراسي.
@@ -87,6 +95,17 @@ export default async function AdminCurriculumPage() {
                                 <h4 className="text-sm font-semibold text-[var(--najoom-navy)]">
                                   الوحدة {unit.sortOrder}: {unit.title}
                                 </h4>
+                                {unit.description ? (
+                                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600">
+                                    {unit.description}
+                                  </p>
+                                ) : null}
+                                <details className="mt-3 rounded-xl border border-slate-200 p-3">
+                                  <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">
+                                    تعديل الوحدة
+                                  </summary>
+                                  <UnitForm semesterId={semester.id} unit={unit} />
+                                </details>
                                 {unit.lessons.length === 0 ? (
                                   <p className="mt-2 text-sm text-slate-500">
                                     لا توجد دروس مسجلة لهذه الوحدة.
