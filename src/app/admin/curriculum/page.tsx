@@ -3,6 +3,7 @@ import Link from "next/link";
 import { listCurriculum } from "@/lib/curriculum/curriculum-service";
 import { SemesterForm } from "./semester-form";
 import { UnitForm } from "./unit-form";
+import { LessonForm } from "./lesson-form";
 
 export default async function AdminCurriculumPage() {
   const grades = await listCurriculum();
@@ -106,6 +107,12 @@ export default async function AdminCurriculumPage() {
                                   </summary>
                                   <UnitForm semesterId={semester.id} unit={unit} />
                                 </details>
+                                <details className="mt-3 rounded-xl border border-slate-200 p-3">
+                                  <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">
+                                    إضافة درس
+                                  </summary>
+                                  <LessonForm unitId={unit.id} />
+                                </details>
                                 {unit.lessons.length === 0 ? (
                                   <p className="mt-2 text-sm text-slate-500">
                                     لا توجد دروس مسجلة لهذه الوحدة.
@@ -114,7 +121,20 @@ export default async function AdminCurriculumPage() {
                                   <ol className="mt-2 space-y-2 text-sm leading-6 text-slate-600">
                                     {unit.lessons.map((lesson) => (
                                       <li key={lesson.id}>
-                                        الدرس {lesson.sortOrder}: {lesson.title}
+                                        <h5 className="font-semibold text-[var(--najoom-navy)]">
+                                          الدرس {lesson.sortOrder}: {lesson.title}
+                                        </h5>
+                                        {lesson.description ? (
+                                          <p className="mt-1 whitespace-pre-wrap break-words">
+                                            {lesson.description}
+                                          </p>
+                                        ) : null}
+                                        <details className="mt-2 rounded-xl border border-slate-200 p-3">
+                                          <summary className="cursor-pointer font-semibold text-[var(--najoom-navy)]">
+                                            تعديل الدرس
+                                          </summary>
+                                          <LessonForm unitId={unit.id} lesson={lesson} />
+                                        </details>
                                       </li>
                                     ))}
                                   </ol>

@@ -168,6 +168,7 @@ export async function listCurriculum() {
                 select: {
                   id: true,
                   title: true,
+                  description: true,
                   sortOrder: true,
                 },
               },
@@ -289,5 +290,118 @@ export async function updateUnit(unitId: string, input: UnitInput) {
     });
   } catch (error) {
     mapUnitWriteError(error);
+  }
+}
+
+export type LessonServiceErrorCode =
+  | "invalid_request_body"
+  | "invalid_unit_id"
+  | "unit_not_found"
+  | "invalid_lesson_title"
+  | "invalid_lesson_description"
+  | "invalid_sort_order"
+  | "lesson_not_found"
+  | "lesson_order_conflict";
+
+export class LessonServiceError extends Error {
+  constructor(public readonly code: LessonServiceErrorCode) {
+    super(code);
+    this.name = "LessonServiceError";
+  }
+}
+
+export type LessonInput = {
+  title: string;
+  description?: string | null;
+  sortOrder: number;
+};
+
+const lessonSelect = {
+  id: true,
+  unitId: true,
+  title: true,
+  description: true,
+  sortOrder: true,
+} as const;
+
+function normalizeLessonInput(input: LessonInput) {
+  const title = input.title.trim();
+  if (!title || title.length > 150) {
+    throw new LessonServiceError("invalid_lesson_title");
+  }
+  if (input.description !== undefined && input.description !== null && typeof input.description !== "string") {
+    throw new LessonServiceError("invalid_lesson_description");
+  }
+  const description = input.description?.trim() || null;
+  if (description && description.length > 5000) {
+    throw new LessonServiceError("invalid_lesson_description");
+  }
+  if (!Number.isInteger(input.sortOrder) || input.sortOrder < 1 || input.sortOrder > 2_147_483_647) {
+    throw new LessonServiceError("invalid_sort_order");
+  }
+  // الوصف المحذوف من PATCH يبقى كما هو؛ null أو النص الفارغ يمسحانه.
+  return {
+    title,
+    sortOrder: input.sortOrder,
+    ...(input.description !== undefined ? { description } : {}),
+  };
+}
+
+async function requireUnit(unitId: string) {
+  const unit = await prisma.unit.findUnique({
+    where: { id: unitId },
+    select: { id: true },
+  });
+  if (!unit) {
+    throw new LessonServiceError("unit_not_found");
+  }
+}
+
+function mapLessonWriteError(error: unknown): never {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if (error.code === "P2002") throw new LessonServiceError("lesson_order_conflict");
+    if (error.code === "P2003") throw new LessonServiceError("unit_not_found");
+    if (error.code === "P2025") throw new LessonServiceError("lesson_not_found");
+  }
+  throw error;
+}
+
+export async function createLesson(input: LessonInput & { unitId: string }) {
+  await requireAdmin();
+  const unitId = input.unitId.trim();
+  if (!unitId) throw new LessonServiceError("invalid_unit_id");
+  const data = normalizeLessonInput(input);
+  await requireUnit(unitId);
+
+  try {
+    return await prisma.lesson.create({
+      data: { unitId, ...data },
+      select: lessonSelect,
+    });
+  } catch (error) {
+    mapLessonWriteError(error);
+  }
+}
+
+export async function updateLesson(lessonId: string, input: LessonInput) {
+  await requireAdmin();
+  const id = lessonId.trim();
+  if (!id) throw new LessonServiceError("lesson_not_found");
+  const data = normalizeLessonInput(input);
+  const lesson = await prisma.lesson.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!lesson) throw new LessonServiceError("lesson_not_found");
+  await requireUnit(lesson.unitId);
+
+  try {
+    return await prisma.lesson.update({
+      where: { id },
+      data,
+      select: lessonSelect,
+    });
+  } catch (error) {
+    mapLessonWriteError(error);
   }
 }
