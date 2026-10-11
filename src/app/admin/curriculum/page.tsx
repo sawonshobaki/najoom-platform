@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+import { OulaGuide } from "@/components/oula/oula-guide";
+import { OULA_STATES } from "@/components/oula/oula-content";
+
 import { listCurriculum, listSkills } from "@/lib/curriculum/curriculum-service";
 import { SemesterForm } from "./semester-form";
 import { UnitForm } from "./unit-form";
@@ -8,8 +11,15 @@ import { LessonItems } from "./lesson-items";
 import { LessonResources } from "./lesson-resources";
 import { SkillsSection } from "./skills-section";
 
+const oulaPreviewLabels = {
+  WELCOME: "ترحيب", HINT: "تلميح", THINKING: "تفكير",
+  SUCCESS: "نجاح", LAB: "مختبر", RESOURCE: "نشاط/مورد",
+};
+
 export default async function AdminCurriculumPage() {
   const [grades, skills] = await Promise.all([listCurriculum(), listSkills()]);
+  const previewUnit = grades.flatMap((grade) => grade.semesters.flatMap((semester) => semester.units))
+    .find((unit) => unit.lessons.length > 0);
 
   return (
     <main dir="rtl" className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
@@ -33,6 +43,19 @@ export default async function AdminCurriculumPage() {
             العودة إلى لوحة الإدارة
           </Link>
         </div>
+
+        <details className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">معاينة عُلا للطالبة</summary>
+          <p className="mb-3 mt-2 text-sm leading-6 text-slate-600">معاينة للمساعدة التعليمية التي ستظهر في صفحات الدروس مستقبلًا.</p>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {OULA_STATES.map((state) => (
+              <div key={state}>
+                <p className="mb-2 text-sm font-medium text-[var(--najoom-navy)]">{oulaPreviewLabels[state]}</p>
+                <OulaGuide state={state} lessonTitle={previewUnit?.lessons[0]?.title} unitTitle={previewUnit?.title} compact />
+              </div>
+            ))}
+          </div>
+        </details>
 
         <SkillsSection skills={skills} />
 
