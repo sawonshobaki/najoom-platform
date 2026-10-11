@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { listCurriculum } from "@/lib/curriculum/curriculum-service";
+import { SemesterForm } from "./semester-form";
 
 export default async function AdminCurriculumPage() {
   const grades = await listCurriculum();
@@ -44,6 +45,13 @@ export default async function AdminCurriculumPage() {
                   {grade.name}
                 </h2>
 
+                <details className="mt-4 rounded-xl border border-slate-200 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">
+                    إضافة فصل دراسي
+                  </summary>
+                  <SemesterForm gradeId={grade.id} />
+                </details>
+
                 {grade.semesters.length === 0 ? (
                   <p className="mt-4 text-sm leading-6 text-slate-500">
                     لم يُضف منهج لهذا الصف بعد؛ لا توجد فصول دراسية مسجلة.
@@ -58,6 +66,15 @@ export default async function AdminCurriculumPage() {
                         <p className="mt-1 text-sm text-slate-500">
                           السنة الدراسية: {semester.academicYear}
                         </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          ترتيب الفصل: {semester.sortOrder}
+                        </p>
+                        <details className="mt-3 rounded-xl border border-slate-200 p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-[var(--najoom-navy)]">
+                            تعديل الفصل الدراسي
+                          </summary>
+                          <SemesterForm gradeId={grade.id} semester={semester} />
+                        </details>
 
                         {semester.units.length === 0 ? (
                           <p className="mt-3 text-sm text-slate-500">
