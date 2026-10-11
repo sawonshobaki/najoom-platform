@@ -28,6 +28,13 @@ export default function AdminHomePage() {
               إدارة الطالبات
             </Link>
 
+            <Link
+              href="/admin/curriculum"
+              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-[var(--najoom-navy)] px-5 py-3 text-sm font-semibold text-white transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--najoom-navy)] focus:ring-offset-2"
+            >
+              إدارة المنهج
+            </Link>
+
             <LogoutButton />
           </div>
         </section>

@@ -1,0 +1,101 @@
+import Link from "next/link";
+
+import { listCurriculum } from "@/lib/curriculum/curriculum-service";
+
+export default async function AdminCurriculumPage() {
+  const grades = await listCurriculum();
+
+  return (
+    <main dir="rtl" className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-[var(--najoom-gold)]">
+              منصة نجوم
+            </p>
+            <h1 className="mt-1 text-2xl font-bold text-[var(--najoom-navy)] sm:text-3xl">
+              إدارة المنهج
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              عرض الصفوف والفصول الدراسية والوحدات والدروس الحالية.
+            </p>
+          </div>
+          <Link
+            href="/admin"
+            className="inline-flex w-fit items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            العودة إلى لوحة الإدارة
+          </Link>
+        </div>
+
+        {grades.length === 0 ? (
+          <div className="rounded-3xl border border-black/5 bg-white p-6 text-sm leading-6 text-slate-600 shadow-sm">
+            لا يوجد منهج لعرضه حاليًا؛ لم تُسجّل أي صفوف بعد.
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {grades.map((grade) => (
+              <section
+                key={grade.id}
+                aria-labelledby={`grade-${grade.id}`}
+                className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm sm:p-6"
+              >
+                <h2 id={`grade-${grade.id}`} className="text-xl font-bold text-[var(--najoom-navy)]">
+                  {grade.name}
+                </h2>
+
+                {grade.semesters.length === 0 ? (
+                  <p className="mt-4 text-sm leading-6 text-slate-500">
+                    لم يُضف منهج لهذا الصف بعد؛ لا توجد فصول دراسية مسجلة.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-5">
+                    {grade.semesters.map((semester) => (
+                      <section key={semester.id} className="rounded-2xl border border-slate-200 p-4">
+                        <h3 className="font-bold text-[var(--najoom-navy)]">
+                          {semester.name}
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-500">
+                          السنة الدراسية: {semester.academicYear}
+                        </p>
+
+                        {semester.units.length === 0 ? (
+                          <p className="mt-3 text-sm text-slate-500">
+                            لا توجد وحدات مسجلة لهذا الفصل الدراسي.
+                          </p>
+                        ) : (
+                          <div className="mt-4 space-y-4">
+                            {semester.units.map((unit) => (
+                              <section key={unit.id} className="border-s-2 border-[var(--najoom-gold)] ps-4">
+                                <h4 className="text-sm font-semibold text-[var(--najoom-navy)]">
+                                  الوحدة {unit.sortOrder}: {unit.title}
+                                </h4>
+                                {unit.lessons.length === 0 ? (
+                                  <p className="mt-2 text-sm text-slate-500">
+                                    لا توجد دروس مسجلة لهذه الوحدة.
+                                  </p>
+                                ) : (
+                                  <ol className="mt-2 space-y-2 text-sm leading-6 text-slate-600">
+                                    {unit.lessons.map((lesson) => (
+                                      <li key={lesson.id}>
+                                        الدرس {lesson.sortOrder}: {lesson.title}
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
+                              </section>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
