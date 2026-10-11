@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "seed:science": "tsx scripts/seed-science-curriculum.ts"
+    "seed:science": "tsx scripts/seed-science-curriculum.ts",
+    "seed:science-resources": "tsx scripts/seed-science-lesson-resources.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
