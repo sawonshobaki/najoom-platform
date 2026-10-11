@@ -1,13 +1,14 @@
 import Link from "next/link";
 
-import { listCurriculum } from "@/lib/curriculum/curriculum-service";
+import { listCurriculum, listSkills } from "@/lib/curriculum/curriculum-service";
 import { SemesterForm } from "./semester-form";
 import { UnitForm } from "./unit-form";
 import { LessonForm } from "./lesson-form";
 import { LessonItems } from "./lesson-items";
+import { SkillsSection } from "./skills-section";
 
 export default async function AdminCurriculumPage() {
-  const grades = await listCurriculum();
+  const [grades, skills] = await Promise.all([listCurriculum(), listSkills()]);
 
   return (
     <main dir="rtl" className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
@@ -31,6 +32,8 @@ export default async function AdminCurriculumPage() {
             العودة إلى لوحة الإدارة
           </Link>
         </div>
+
+        <SkillsSection skills={skills} />
 
         {grades.length === 0 ? (
           <div className="rounded-3xl border border-black/5 bg-white p-6 text-sm leading-6 text-slate-600 shadow-sm">
@@ -136,7 +139,7 @@ export default async function AdminCurriculumPage() {
                                           </summary>
                                           <LessonForm unitId={unit.id} lesson={lesson} />
                                         </details>
-                                        <LessonItems lessonId={lesson.id} concepts={lesson.concepts} learningObjectives={lesson.learningObjectives} />
+                                        <LessonItems lessonId={lesson.id} concepts={lesson.concepts} learningObjectives={lesson.learningObjectives} skills={skills} />
                                       </li>
                                     ))}
                                   </ol>

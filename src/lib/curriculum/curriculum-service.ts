@@ -174,7 +174,10 @@ export async function listCurriculum() {
                     select: { id: true, title: true, description: true },
                   },
                   learningObjectives: {
-                    select: { id: true, title: true, description: true },
+                    select: {
+                      id: true, title: true, description: true,
+                      skills: { select: { skill: { select: { id: true, name: true, description: true } } } },
+                    },
                   },
                 },
               },
@@ -509,5 +512,132 @@ export async function updateLearningObjective(objectiveId: string, input: Lesson
     return await prisma.learningObjective.update({ where: { id }, data, select: lessonItemSelect });
   } catch (error) {
     mapLessonItemWriteError(error, "objective_not_found");
+  }
+}
+
+export type SkillServiceErrorCode =
+  | "invalid_request_body"
+  | "invalid_skill_name"
+  | "invalid_skill_description"
+  | "invalid_skill_id"
+  | "invalid_objective_id"
+  | "skill_not_found"
+  | "objective_not_found"
+  | "skill_name_conflict"
+  | "objective_skill_conflict"
+  | "objective_skill_not_found";
+
+export class SkillServiceError extends Error {
+  constructor(public readonly code: SkillServiceErrorCode) {
+    super(code);
+    this.name = "SkillServiceError";
+  }
+}
+
+export type SkillInput = { name: string; description?: string | null };
+const skillSelect = { id: true, name: true, description: true } as const;
+const objectiveSkillSelect = { learningObjectiveId: true, skillId: true } as const;
+
+function normalizeSkillInput(input: SkillInput) {
+  if (typeof input.name !== "string") throw new SkillServiceError("invalid_skill_name");
+  const name = input.name.trim();
+  if (!name || name.length > 150) throw new SkillServiceError("invalid_skill_name");
+  if (input.description !== undefined && input.description !== null && typeof input.description !== "string") {
+    throw new SkillServiceError("invalid_skill_description");
+  }
+  const description = input.description?.trim() || null;
+  if (description && description.length > 5000) throw new SkillServiceError("invalid_skill_description");
+  return { name, ...(input.description !== undefined ? { description } : {}) };
+}
+
+function normalizeSkillId(value: string, error: "invalid_skill_id" | "invalid_objective_id") {
+  if (typeof value !== "string" || !value.trim()) throw new SkillServiceError(error);
+  return value.trim();
+}
+
+async function requireExistingSkill(id: string) {
+  const skill = await prisma.skill.findUnique({ where: { id }, select: { id: true } });
+  if (!skill) throw new SkillServiceError("skill_not_found");
+}
+
+async function requireExistingObjective(id: string) {
+  const objective = await prisma.learningObjective.findUnique({ where: { id }, select: { id: true } });
+  if (!objective) throw new SkillServiceError("objective_not_found");
+}
+
+function mapSkillWriteError(error: unknown): never {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if (error.code === "P2002") throw new SkillServiceError("skill_name_conflict");
+    if (error.code === "P2025") throw new SkillServiceError("skill_not_found");
+  }
+  throw error;
+}
+
+export async function listSkills() {
+  await requireAdmin();
+  return prisma.skill.findMany({ orderBy: [{ name: "asc" }, { id: "asc" }], select: skillSelect });
+}
+
+export async function createSkill(input: SkillInput) {
+  await requireAdmin();
+  const data = normalizeSkillInput(input);
+  try {
+    return await prisma.skill.create({ data, select: skillSelect });
+  } catch (error) {
+    mapSkillWriteError(error);
+  }
+}
+
+export async function updateSkill(skillId: string, input: SkillInput) {
+  await requireAdmin();
+  const id = normalizeSkillId(skillId, "invalid_skill_id");
+  const data = normalizeSkillInput(input);
+  await requireExistingSkill(id);
+  try {
+    return await prisma.skill.update({ where: { id }, data, select: skillSelect });
+  } catch (error) {
+    mapSkillWriteError(error);
+  }
+}
+
+export async function addSkillToLearningObjective(objectiveId: string, skillId: string) {
+  await requireAdmin();
+  const learningObjectiveId = normalizeSkillId(objectiveId, "invalid_objective_id");
+  const id = normalizeSkillId(skillId, "invalid_skill_id");
+  await requireExistingObjective(learningObjectiveId);
+  await requireExistingSkill(id);
+  try {
+    return await prisma.learningObjectiveSkill.create({
+      data: { learningObjectiveId, skillId: id }, select: objectiveSkillSelect,
+    });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error) {
+      if (error.code === "P2002") throw new SkillServiceError("objective_skill_conflict");
+      if (error.code === "P2003") {
+        // Recheck both parents to identify which disappeared during the write.
+        await requireExistingObjective(learningObjectiveId);
+        await requireExistingSkill(id);
+      }
+    }
+    throw error;
+  }
+}
+
+export async function removeSkillFromLearningObjective(objectiveId: string, skillId: string) {
+  await requireAdmin();
+  const learningObjectiveId = normalizeSkillId(objectiveId, "invalid_objective_id");
+  const id = normalizeSkillId(skillId, "invalid_skill_id");
+  await requireExistingObjective(learningObjectiveId);
+  await requireExistingSkill(id);
+  try {
+    return await prisma.learningObjectiveSkill.delete({
+      where: { learningObjectiveId_skillId: { learningObjectiveId, skillId: id } },
+      select: objectiveSkillSelect,
+    });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "P2025") {
+      throw new SkillServiceError("objective_skill_not_found");
+    }
+    throw error;
   }
 }

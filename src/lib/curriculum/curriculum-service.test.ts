@@ -77,7 +77,9 @@ describe("listCurriculum", () => {
     expect(units.select.lessons.select).toEqual({
       id: true, title: true, description: true, sortOrder: true,
       concepts: { select: { id: true, title: true, description: true } },
-      learningObjectives: { select: { id: true, title: true, description: true } },
+      learningObjectives: { select: { id: true, title: true, description: true,
+        skills: { select: { skill: { select: { id: true, name: true, description: true } } } },
+      } },
     });
   });
 

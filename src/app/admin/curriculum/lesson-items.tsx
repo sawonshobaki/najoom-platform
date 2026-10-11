@@ -1,9 +1,12 @@
 import { LessonItemForm } from "./lesson-item-form";
+import { ObjectiveSkills } from "./objective-skills";
 
 type LessonItem = { id: string; title: string; description: string | null };
-type LessonItemsProps = { lessonId: string; concepts: LessonItem[]; learningObjectives: LessonItem[] };
+type Skill = { id: string; name: string };
+type Objective = LessonItem & { skills: { skill: Skill }[] };
+type LessonItemsProps = { lessonId: string; concepts: LessonItem[]; learningObjectives: Objective[]; skills: Skill[] };
 
-export function LessonItems({ lessonId, concepts, learningObjectives }: LessonItemsProps) {
+export function LessonItems({ lessonId, concepts, learningObjectives, skills }: LessonItemsProps) {
   const groups = [
     { kind: "concept" as const, heading: "المفاهيم", label: "المفهوم", items: concepts, empty: "لا توجد مفاهيم مسجلة لهذا الدرس." },
     { kind: "objective" as const, heading: "الأهداف التعليمية", label: "الهدف التعليمي", items: learningObjectives, empty: "لا توجد أهداف تعليمية مسجلة لهذا الدرس." },
@@ -27,6 +30,7 @@ export function LessonItems({ lessonId, concepts, learningObjectives }: LessonIt
                     <summary className="cursor-pointer font-medium text-[var(--najoom-navy)]">تعديل {group.label}</summary>
                     <LessonItemForm kind={group.kind} lessonId={lessonId} item={item} />
                   </details>
+                  {group.kind === "objective" && "skills" in item ? <ObjectiveSkills objectiveId={item.id} skills={skills} linkedSkills={item.skills} /> : null}
                 </li>
               ))}
             </ul>

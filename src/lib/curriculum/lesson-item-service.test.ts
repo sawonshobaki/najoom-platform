@@ -131,13 +131,15 @@ for (const config of [
   });
 }
 
-it("reads concepts and objectives without introducing ordering or skills", async () => {
+it("reads concepts and objectives with linked skills but without new ordering", async () => {
   vi.resetAllMocks();
   mocks.requireAdmin.mockResolvedValue(undefined);
   mocks.gradeFind.mockResolvedValue([]);
   await listCurriculum();
   const selection = mocks.gradeFind.mock.calls[0][0].select.semesters.select.units.select.lessons.select;
-  for (const relation of ["concepts", "learningObjectives"]) {
-    expect(selection[relation]).toEqual({ select: { id: true, title: true, description: true } });
-  }
+  expect(selection.concepts).toEqual({ select: { id: true, title: true, description: true } });
+  expect(selection.learningObjectives).toEqual({ select: {
+    id: true, title: true, description: true,
+    skills: { select: { skill: { select: { id: true, name: true, description: true } } } },
+  } });
 });
