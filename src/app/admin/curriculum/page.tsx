@@ -10,6 +10,7 @@ import { LessonForm } from "./lesson-form";
 import { LessonItems } from "./lesson-items";
 import { LessonResources } from "./lesson-resources";
 import { SkillsSection } from "./skills-section";
+import { ResourceExperiencePreview } from "./resource-experience-preview";
 
 const oulaPreviewLabels = {
   WELCOME: "ترحيب", HINT: "تلميح", THINKING: "تفكير",
@@ -20,6 +21,11 @@ export default async function AdminCurriculumPage() {
   const [grades, skills] = await Promise.all([listCurriculum(), listSkills()]);
   const previewUnit = grades.flatMap((grade) => grade.semesters.flatMap((semester) => semester.units))
     .find((unit) => unit.lessons.length > 0);
+
+  const resourceLesson = grades.flatMap((grade) => grade.semesters.flatMap((semester) =>
+    semester.units.flatMap((unit) => unit.lessons)))
+    .find((lesson) => lesson.lessonResources.length > 0);
+  const previewResource = resourceLesson?.lessonResources[0];
 
   return (
     <main dir="rtl" className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
@@ -56,6 +62,10 @@ export default async function AdminCurriculumPage() {
             ))}
           </div>
         </details>
+
+        <ResourceExperiencePreview resource={previewResource ? {
+          ...previewResource, lessonTitle: resourceLesson?.title,
+        } : undefined} />
 
         <SkillsSection skills={skills} />
 
