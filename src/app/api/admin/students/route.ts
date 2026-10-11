@@ -41,6 +41,9 @@ function mapStudentError(
     case "invalid_full_name":
       return "اسم الطالبة غير صالح.";
 
+    case "invalid_password":
+      return "كلمة المرور غير صالحة. يجب أن تتكون من 10 إلى 128 حرفًا وألا تكون من كلمات المرور الشائعة.";
+
     case "username_already_exists":
       return "اسم المستخدم مستخدم بالفعل.";
 
@@ -102,8 +105,17 @@ export async function POST(
   let body: CreateStudentBody;
 
   try {
-    body =
-      (await request.json()) as CreateStudentBody;
+    const parsedBody: unknown = await request.json();
+
+    if (
+      parsedBody === null ||
+      typeof parsedBody !== "object" ||
+      Array.isArray(parsedBody)
+    ) {
+      throw new Error("Invalid request body.");
+    }
+
+    body = parsedBody as CreateStudentBody;
   } catch {
     return NextResponse.json(
       {

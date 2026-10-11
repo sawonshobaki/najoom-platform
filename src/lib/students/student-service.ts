@@ -5,7 +5,10 @@ import {
   UserRole,
 } from "@/generated/prisma/client";
 
-import { hashPassword } from "@/lib/auth/password";
+import {
+  hashPassword,
+  validatePasswordPolicy,
+} from "@/lib/auth/password";
 import { prisma } from "@/lib/db/prisma";
 
 const MAX_USERNAME_LENGTH = 100;
@@ -16,6 +19,7 @@ export type StudentServiceErrorCode =
   | "invalid_username"
   | "invalid_student_code"
   | "invalid_full_name"
+  | "invalid_password"
   | "invalid_student_list_query"
   | "username_already_exists"
   | "student_code_already_exists"
@@ -24,7 +28,8 @@ export type StudentServiceErrorCode =
   | "student_not_found"
   | "student_inactive"
   | "student_already_in_section"
-  | "student_section_changed";
+  | "student_section_changed"
+  | "student_has_related_data";
 
 export class StudentServiceError extends Error {
   constructor(
@@ -160,6 +165,10 @@ export async function createStudent(
     studentCode,
     fullName,
   });
+
+  if (!validatePasswordPolicy(input.password).valid) {
+    throw new StudentServiceError("invalid_password");
+  }
 
   // ننفذ التشفير قبل فتح معاملة قاعدة البيانات.
   const passwordHash = await hashPassword(
@@ -771,11 +780,21 @@ export async function deleteStudent(
     );
   }
 
-  await prisma.user.delete({
-    where: {
-      id: student.userId,
-    },
-  });
+  try {
+    await prisma.user.delete({
+      where: {
+        id: student.userId,
+      },
+    });
+  } catch (error) {
+    if (isPrismaErrorWithCode(error, "P2003")) {
+      throw new StudentServiceError(
+        "student_has_related_data",
+      );
+    }
+
+    throw error;
+  }
 
   return {
     id: student.id,

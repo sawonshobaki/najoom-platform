@@ -6,13 +6,14 @@ import {
   vi,
 } from "vitest";
 
-import { UserRole } from "@/generated/prisma/client";
+import { Prisma, UserRole } from "@/generated/prisma/client";
 
 const {
   hashPasswordMock,
   userFindUniqueMock,
   userCreateMock,
   userUpdateMock,
+  userDeleteMock,
   studentFindUniqueMock,
   studentFindUniqueOrThrowMock,
   studentFindManyMock,
@@ -28,6 +29,7 @@ const {
   userFindUniqueMock: vi.fn(),
   userCreateMock: vi.fn(),
   userUpdateMock: vi.fn(),
+  userDeleteMock: vi.fn(),
   studentFindUniqueMock: vi.fn(),
   studentFindUniqueOrThrowMock: vi.fn(),
   studentFindManyMock: vi.fn(),
@@ -40,7 +42,8 @@ const {
   transactionMock: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/password", () => ({
+vi.mock("@/lib/auth/password", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/auth/password")>(),
   hashPassword: hashPasswordMock,
 }));
 
@@ -48,6 +51,7 @@ vi.mock("@/lib/db/prisma", () => ({
   prisma: {
     user: {
       findUnique: userFindUniqueMock,
+      delete: userDeleteMock,
     },
     student: {
       findUnique: studentFindUniqueMock,
@@ -70,6 +74,7 @@ import {
   addStudentToSection,
   createStudent,
   deactivateStudent,
+  deleteStudent,
   listStudents,
   removeStudentFromSection,
   setStudentActiveState,
@@ -158,6 +163,23 @@ describe("student service", () => {
         ...unassignedStudent,
         user: studentUser,
       });
+    });
+
+    it.each([
+      "short",
+      "a".repeat(129),
+      "password123",
+    ])("rejects a password that violates policy: %s", async (password) => {
+      await expect(createStudent({
+        ...studentInput,
+        password,
+      })).rejects.toMatchObject({
+        code: "invalid_password",
+      });
+
+      expect(hashPasswordMock).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(userFindUniqueMock).not.toHaveBeenCalled();
     });
 
     it("creates a student and user in one transaction", async () => {
@@ -376,6 +398,43 @@ describe("student service", () => {
           .not.toHaveBeenCalled();
       },
     );
+  });
+
+  describe("deleteStudent related-data errors", () => {
+    beforeEach(() => {
+      studentFindUniqueMock.mockResolvedValue({
+        ...unassignedStudent,
+        userId: "user-1",
+      });
+    });
+
+    it("converts a Prisma foreign-key restriction to a domain error", async () => {
+      userDeleteMock.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError(
+          "Foreign key constraint violated",
+          { code: "P2003", clientVersion: "7.10.0" },
+        ),
+      );
+
+      await expect(deleteStudent("student-1"))
+        .rejects.toMatchObject({
+          name: "StudentServiceError",
+          code: "student_has_related_data",
+        });
+      expect(userDeleteMock).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+      });
+    });
+
+    it("does not disguise unrelated database errors as restrictions", async () => {
+      const error = new Prisma.PrismaClientKnownRequestError(
+        "Record not found",
+        { code: "P2025", clientVersion: "7.10.0" },
+      );
+      userDeleteMock.mockRejectedValue(error);
+
+      await expect(deleteStudent("student-1")).rejects.toBe(error);
+    });
   });
 
   describe("addStudentToSection", () => {

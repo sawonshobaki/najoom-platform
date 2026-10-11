@@ -85,8 +85,17 @@ export async function PATCH(
   let body: UpdateActiveBody;
 
   try {
-    body =
-      (await request.json()) as UpdateActiveBody;
+    const parsedBody: unknown = await request.json();
+
+    if (
+      parsedBody === null ||
+      typeof parsedBody !== "object" ||
+      Array.isArray(parsedBody)
+    ) {
+      throw new Error("Invalid request body.");
+    }
+
+    body = parsedBody as UpdateActiveBody;
   } catch {
     return NextResponse.json(
       {

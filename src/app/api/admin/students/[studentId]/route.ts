@@ -79,6 +79,17 @@ export async function DELETE(
       error instanceof
       StudentServiceError
     ) {
+      if (error.code === "student_has_related_data") {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "لدى الطالبة بيانات مرتبطة، ولا يمكن حذفها حاليًا.",
+          },
+          { status: 409 },
+        );
+      }
+
       if (
         error.code ===
         "student_not_found"
