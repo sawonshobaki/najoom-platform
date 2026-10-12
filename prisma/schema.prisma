@@ -457,6 +457,7 @@ model LearningObjectiveSkill {
 model Question {
   id         String             @id @default(cuid())
   text       String
+  explanation String?
   type       QuestionType
   difficulty QuestionDifficulty
   points     Int                @default(1)
