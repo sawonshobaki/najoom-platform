@@ -6,7 +6,7 @@ export type ScienceLessonResource = {
   semester: string;
   unit: string;
   lesson: string;
-  sourceHost: "phet.colorado.edu" | "spaceplace.nasa.gov" | "education.nationalgeographic.org";
+  sourceHost: "phet.colorado.edu" | "spaceplace.nasa.gov" | "education.nationalgeographic.org" | "studywithstem.github.io";
   title: string;
   url: string;
   type: LessonResourceType;
@@ -72,5 +72,19 @@ export const scienceLessonResources: ScienceLessonResource[] = [
     url: "https://education.nationalgeographic.org/resource/human-impacts-environment/",
     type: "GAME", language: "الإنجليزية", isFree: true, sortOrder: 1,
     instructionsArabic: "اختبري معلوماتك عن تأثير الإنسان في البيئة. ركّزي على التلوث والأنواع الدخيلة وتدمير المواطن الطبيعية، وفكّري كيف يمكن لهذه التغيرات أن تؤثر في النظام البيئي.",
+  },
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الأول", unit: "من الخلية إلى الجسم", lesson: "الخلية",
+    sourceHost: "studywithstem.github.io", title: "استكشاف الخلية النباتية والحيوانية",
+    url: "https://studywithstem.github.io/tools/biology/interactive-cell/",
+    type: "SIMULATION", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "استكشفي الخلية النباتية والخلية الحيوانية، واضغطي على الأجزاء المختلفة لتتعرفي إلى وظائفها. بعد ذلك قارني بين الخليتين وركّزي على الأجزاء المشتركة والأجزاء التي تميّز كل واحدة منهما.",
+  },
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الثاني", unit: "البيئة", lesson: "الجماعات الحيوية",
+    sourceHost: "education.nationalgeographic.org", title: "الجماعات الحيوية والكثافة السكانية - National Geographic",
+    url: "https://education.nationalgeographic.org/resource/population-density/",
+    type: "ARTICLE", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "اقرئي تعريف الجماعة الحيوية وركّزي على أن أفرادها ينتمون إلى النوع نفسه ويعيشون في منطقة محددة. لاحظي أيضًا كيف تساعد الكثافة السكانية في وصف عدد أفراد الجماعة داخل المساحة.",
   },
 ];

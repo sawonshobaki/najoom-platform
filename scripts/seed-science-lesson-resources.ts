@@ -11,7 +11,7 @@ const resourceFields = ["title", "url", "type", "language", "isFree", "sortOrder
 const lessonKey = (item: ScienceLessonResource) => JSON.stringify([item.grade, item.semester, item.unit, item.lesson]);
 
 export function validateScienceLessonResources(data: ScienceLessonResource[]) {
-  if (data.length !== 8) throw new ScienceResourcesSeedError("يجب أن تحتوي الدفعة على 8 موارد فقط.");
+  if (data.length !== 10) throw new ScienceResourcesSeedError("يجب أن تحتوي الدفعة على 10 موارد فقط.");
   const urls = new Set<string>();
   const orders = new Set<string>();
   const distribution = new Map<string, number>();
@@ -26,7 +26,7 @@ export function validateScienceLessonResources(data: ScienceLessonResource[]) {
     try { url = new URL(item.url); }
     catch { throw new ScienceResourcesSeedError("رابط المورد غير صالح."); }
     if (url.protocol !== "https:" || !item.url.startsWith("https://") || url.username || url.password
-      || url.port || !["phet.colorado.edu", "spaceplace.nasa.gov", "education.nationalgeographic.org"].includes(item.sourceHost) || url.hostname !== item.sourceHost) {
+      || url.port || !["phet.colorado.edu", "spaceplace.nasa.gov", "education.nationalgeographic.org", "studywithstem.github.io"].includes(item.sourceHost) || url.hostname !== item.sourceHost) {
       throw new ScienceResourcesSeedError(`يجب أن يكون رابط «${item.title}» HTTPS وعلى مضيف المصدر المعتمد.`);
     }
     const key = lessonKey(item);
@@ -36,8 +36,8 @@ export function validateScienceLessonResources(data: ScienceLessonResource[]) {
     urls.add(urlKey); orders.add(orderKey);
     distribution.set(key, (distribution.get(key) ?? 0) + 1);
   }
-  if (distribution.size !== 7 || [...distribution.values()].sort().join() !== "1,1,1,1,1,1,2") {
-    throw new ScienceResourcesSeedError("يجب توزيع الموارد الثمانية على سبعة دروس: ستة دروس بمورد واحد ودرس بموردين.");
+  if (distribution.size !== 9 || [...distribution.values()].sort().join() !== "1,1,1,1,1,1,1,1,2") {
+    throw new ScienceResourcesSeedError("يجب توزيع الموارد العشرة على تسعة دروس: ثمانية دروس بمورد واحد ودرس بموردين.");
   }
   return { resources: data.length, lessons: distribution.size };
 }
