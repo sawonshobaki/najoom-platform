@@ -7,7 +7,7 @@ import { parseSeedArgs } from "./seed-science-curriculum";
 const options = { apply: false, databaseUrl: "postgresql://127.0.0.1:5432/najoom_dev", nodeEnv: "development" };
 const copyData = () => structuredClone(scienceLessonResources);
 type SavedResource = Pick<ScienceLessonResource, "title" | "url" | "type" | "language" | "isFree" | "sortOrder" | "instructionsArabic"> & { id: string; lessonId: string };
-const paths = scienceLessonResources.filter((item, index, all) => all.findIndex(other => other.lesson === item.lesson) === index);
+const paths = scienceLessonResources.filter((item, index, all) => all.findIndex(other => [other.grade, other.semester, other.unit, other.lesson].join("/") === [item.grade, item.semester, item.unit, item.lesson].join("/")) === index);
 
 function database() {
   const rows: SavedResource[] = [];
@@ -34,12 +34,13 @@ function database() {
   return { client, rows, targets, lesson, lessonResource, transaction, execute };
 }
 
-describe("first official lesson resources", () => {
-  it("contains exactly five resources across the four approved lessons", () => {
-    expect(validateScienceLessonResources(scienceLessonResources)).toEqual({ resources: 5, lessons: 4 });
-    expect(paths.map(path => scienceLessonResources.filter(row => row.lesson === path.lesson).length)).toEqual([1, 1, 1, 2]);
+describe("approved science lesson resources", () => {
+  it("contains exactly eight resources across seven approved lessons", () => {
+    expect(validateScienceLessonResources(scienceLessonResources)).toEqual({ resources: 8, lessons: 7 });
+    expect(new Set(scienceLessonResources.map(row => row.url)).size).toBe(8);
+    expect(paths.map(path => scienceLessonResources.filter(row => row.lesson === path.lesson).length)).toEqual([1, 1, 1, 2, 1, 1, 1]);
     expect(scienceLessonResources.filter(row => row.lesson === "الفضاء والكون").map(row => row.sortOrder)).toEqual([1, 2]);
-    expect(scienceLessonResources.some(row => ["الخلية", "النظام البيئي"].includes(row.lesson))).toBe(false);
+    expect(scienceLessonResources.some(row => ["الخلية", "الجماعات الحيوية"].includes(row.lesson))).toBe(false);
   });
   it.each(["http", "unknown host", "lookalike host", "wrong approved host", "credentials", "invalid URL"])("rejects %s", kind => {
     const data = copyData();
@@ -52,7 +53,7 @@ describe("first official lesson resources", () => {
     expect(() => validateScienceLessonResources(data)).toThrow(/رابط/);
   });
   it("rejects missing data and duplicate input URLs or positions", () => {
-    expect(() => validateScienceLessonResources(copyData().slice(0, 4))).toThrow(/5/);
+    expect(() => validateScienceLessonResources(copyData().slice(0, 4))).toThrow(/8/);
     const data = copyData(); data[4].url = data[3].url;
     expect(() => validateScienceLessonResources(data)).toThrow(/مكرر/);
     const orders = copyData(); orders[4].sortOrder = 1;
@@ -61,8 +62,8 @@ describe("first official lesson resources", () => {
   it("resolves full paths including the academic year and performs a read-only dry run", async () => {
     const db = database();
     const summary = await seedScienceLessonResources(db.client, copyData(), options);
-    expect(summary).toMatchObject({ totals: { resources: 5, lessons: 4 }, create: 5, matched: 0 });
-    expect(summary.lessons.map(row => row.resources)).toEqual([1, 1, 1, 2]);
+    expect(summary).toMatchObject({ totals: { resources: 8, lessons: 7 }, create: 8, matched: 0 });
+    expect(summary.lessons.map(row => row.resources)).toEqual([1, 1, 1, 2, 1, 1, 1]);
     expect(db.lesson.findMany.mock.calls[0][0].where).toEqual({ title: "الذرات والجزيئات", unit: {
       title: "المادة", semester: { name: "الفصل الدراسي الأول", academicYear: "2026-2027", grade: { name: "الصف السادس" } },
     } });
@@ -88,9 +89,9 @@ describe("first official lesson resources", () => {
     const db = database();
     await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true });
     const before = structuredClone(db.rows);
-    expect(await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true })).toMatchObject({ create: 0, matched: 5 });
+    expect(await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true })).toMatchObject({ create: 0, matched: 8 });
     expect(db.rows).toEqual(before);
-    expect(db.rows).toHaveLength(5);
+    expect(db.rows).toHaveLength(8);
     expect(db.execute.mock.calls[0][0]).toEqual(['LOCK TABLE "lesson_resources" IN SHARE ROW EXCLUSIVE MODE']);
     expect(db.transaction.mock.calls[0][1]).toMatchObject({ isolationLevel: "Serializable" });
   });
@@ -135,5 +136,85 @@ describe("first official lesson resources", () => {
     expect(parseSeedArgs(["--apply"])).toEqual({ apply: true });
     expect(() => parseSeedArgs(["--dry-run", "--apply"])).toThrow();
     expect(() => parseSeedArgs(["--force"])).toThrow();
+  });
+});
+
+const approvedBiologyResources: ScienceLessonResource[] = [
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الأول", unit: "من الخلية إلى الجسم", lesson: "نقل المواد والعمليات الحيوية في الخلية",
+    sourceHost: "phet.colorado.edu", title: "نقل المواد عبر غشاء الخلية - PhET",
+    url: "https://phet.colorado.edu/sims/html/membrane-transport/latest/membrane-transport_all.html",
+    type: "SIMULATION", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "جرّبي الشاشات المختلفة ولاحظي كيف تنتقل المواد عبر غشاء الخلية. قارني بين الانتشار البسيط والانتشار الميسّر والنقل النشط، وركّزي على دور بروتينات النقل.",
+  },
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الثاني", unit: "البيئة", lesson: "الأنظمة البيئية",
+    sourceHost: "education.nationalgeographic.org", title: "النظام البيئي البري - National Geographic",
+    url: "https://education.nationalgeographic.org/resource/terrestrial-ecosystem/",
+    type: "ARTICLE", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "اقرئي عن النظام البيئي البري وركّزي على المكونات الحية وغير الحية. لاحظي كيف تؤثر درجة الحرارة والمطر والتربة والضوء في الكائنات التي تعيش في البيئة.",
+  },
+  {
+    grade: "الصف الخامس", semester: "الفصل الدراسي الأول", unit: "البيئة", lesson: "أثر تغيرات البيئة في الأنظمة البيئية",
+    sourceHost: "education.nationalgeographic.org", title: "تأثير الإنسان في البيئة - National Geographic",
+    url: "https://education.nationalgeographic.org/resource/human-impacts-environment/",
+    type: "GAME", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "اختبري معلوماتك عن تأثير الإنسان في البيئة. ركّزي على التلوث والأنواع الدخيلة وتدمير المواطن الطبيعية، وفكّري كيف يمكن لهذه التغيرات أن تؤثر في النظام البيئي.",
+  },
+];
+
+describe("approved biology and ecosystem additions", () => {
+  it.each(approvedBiologyResources)("preserves every approved field for $lesson", expected => {
+    expect(scienceLessonResources.find(row => row.url === expected.url)).toEqual(expected);
+  });
+  it.each(approvedBiologyResources)("resolves the full parent path for $lesson without writing in dry run", async expected => {
+    const db = database();
+    await seedScienceLessonResources(db.client, copyData(), options);
+    expect(db.lesson.findMany).toHaveBeenCalledWith({ where: {
+      title: expected.lesson, unit: { title: expected.unit, semester: {
+        name: expected.semester, academicYear: "2026-2027", grade: { name: expected.grade },
+      } },
+    }, select: { id: true }, take: 2 });
+    expect(db.lessonResource.create).not.toHaveBeenCalled();
+  });
+  it.each(approvedBiologyResources)("rejects an unapproved host for $lesson", expected => {
+    const data = copyData();
+    const row = data.find(row => row.url === expected.url)!;
+    row.url = row.url.replace(expected.sourceHost, `${expected.sourceHost}.example.org`);
+    expect(() => validateScienceLessonResources(data)).toThrow(/مضيف/);
+  });
+  it.each(approvedBiologyResources)("requires HTTPS for $lesson", expected => {
+    const data = copyData(); data.find(row => row.url === expected.url)!.url = expected.url.replace("https:", "http:");
+    expect(() => validateScienceLessonResources(data)).toThrow(/HTTPS/);
+  });
+  it.each(approvedBiologyResources)("stops on an occupied order for $lesson without modifying existing resources", async expected => {
+    const db = database();
+    await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true });
+    db.rows.find(row => row.url === expected.url)!.url = `https://${expected.sourceHost}/different-resource`;
+    const before = structuredClone(db.rows);
+    db.lessonResource.create.mockClear();
+    await expect(seedScienceLessonResources(db.client, copyData(), { ...options, apply: true })).rejects.toThrow(/ترتيب مشغول/);
+    expect(db.rows).toEqual(before);
+    expect(db.lessonResource.create).not.toHaveBeenCalled();
+  });
+  it("plans only three new resources when the original five exist, then matches all eight on a repeat run", async () => {
+    const db = database();
+    await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true });
+    db.rows.splice(5);
+    const original = structuredClone(db.rows);
+    db.lessonResource.create.mockClear();
+    expect(await seedScienceLessonResources(db.client, copyData(), options)).toMatchObject({ create: 3, matched: 5 });
+    expect(db.rows).toEqual(original);
+    expect(db.lessonResource.create).not.toHaveBeenCalled();
+    expect(await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true })).toMatchObject({ create: 3, matched: 5 });
+    expect(db.rows.slice(0, 5)).toEqual(original);
+    const applied = structuredClone(db.rows);
+    expect(await seedScienceLessonResources(db.client, copyData(), { ...options, apply: true })).toMatchObject({ create: 0, matched: 8 });
+    expect(db.rows).toEqual(applied);
+    expect(new Set(db.rows.map(row => `${row.lessonId}/${row.url}`)).size).toBe(8);
+  });
+  it("rejects grades outside the two supported grades", () => {
+    const data = copyData(); data[7].grade = "الصف السابع";
+    expect(() => validateScienceLessonResources(data)).toThrow(/مسار الدرس/);
   });
 });

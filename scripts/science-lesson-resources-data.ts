@@ -6,7 +6,7 @@ export type ScienceLessonResource = {
   semester: string;
   unit: string;
   lesson: string;
-  sourceHost: "phet.colorado.edu" | "spaceplace.nasa.gov";
+  sourceHost: "phet.colorado.edu" | "spaceplace.nasa.gov" | "education.nationalgeographic.org";
   title: string;
   url: string;
   type: LessonResourceType;
@@ -51,5 +51,26 @@ export const scienceLessonResources: ScienceLessonResource[] = [
     url: "https://spaceplace.nasa.gov/en/menu/kids/",
     type: "GAME", language: "الإنجليزية", isFree: true, sortOrder: 2,
     instructionsArabic: "اختاري لعبة أو نشاطًا عن الفضاء وجربيه. لا يهم تخلصي كل شيء؛ ركّزي على فكرة علمية واحدة جديدة تتعلميها من النشاط.",
+  },
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الأول", unit: "من الخلية إلى الجسم", lesson: "نقل المواد والعمليات الحيوية في الخلية",
+    sourceHost: "phet.colorado.edu", title: "نقل المواد عبر غشاء الخلية - PhET",
+    url: "https://phet.colorado.edu/sims/html/membrane-transport/latest/membrane-transport_all.html",
+    type: "SIMULATION", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "جرّبي الشاشات المختلفة ولاحظي كيف تنتقل المواد عبر غشاء الخلية. قارني بين الانتشار البسيط والانتشار الميسّر والنقل النشط، وركّزي على دور بروتينات النقل.",
+  },
+  {
+    grade: "الصف السادس", semester: "الفصل الدراسي الثاني", unit: "البيئة", lesson: "الأنظمة البيئية",
+    sourceHost: "education.nationalgeographic.org", title: "النظام البيئي البري - National Geographic",
+    url: "https://education.nationalgeographic.org/resource/terrestrial-ecosystem/",
+    type: "ARTICLE", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "اقرئي عن النظام البيئي البري وركّزي على المكونات الحية وغير الحية. لاحظي كيف تؤثر درجة الحرارة والمطر والتربة والضوء في الكائنات التي تعيش في البيئة.",
+  },
+  {
+    grade: "الصف الخامس", semester: "الفصل الدراسي الأول", unit: "البيئة", lesson: "أثر تغيرات البيئة في الأنظمة البيئية",
+    sourceHost: "education.nationalgeographic.org", title: "تأثير الإنسان في البيئة - National Geographic",
+    url: "https://education.nationalgeographic.org/resource/human-impacts-environment/",
+    type: "GAME", language: "الإنجليزية", isFree: true, sortOrder: 1,
+    instructionsArabic: "اختبري معلوماتك عن تأثير الإنسان في البيئة. ركّزي على التلوث والأنواع الدخيلة وتدمير المواطن الطبيعية، وفكّري كيف يمكن لهذه التغيرات أن تؤثر في النظام البيئي.",
   },
 ];

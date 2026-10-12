@@ -11,12 +11,12 @@ const resourceFields = ["title", "url", "type", "language", "isFree", "sortOrder
 const lessonKey = (item: ScienceLessonResource) => JSON.stringify([item.grade, item.semester, item.unit, item.lesson]);
 
 export function validateScienceLessonResources(data: ScienceLessonResource[]) {
-  if (data.length !== 5) throw new ScienceResourcesSeedError("يجب أن تحتوي الدفعة على 5 موارد فقط.");
+  if (data.length !== 8) throw new ScienceResourcesSeedError("يجب أن تحتوي الدفعة على 8 موارد فقط.");
   const urls = new Set<string>();
   const orders = new Set<string>();
   const distribution = new Map<string, number>();
   for (const item of data) {
-    if (item.grade !== "الصف السادس" || !["الفصل الدراسي الأول", "الفصل الدراسي الثاني"].includes(item.semester)
+    if (!["الصف الخامس", "الصف السادس"].includes(item.grade) || !["الفصل الدراسي الأول", "الفصل الدراسي الثاني"].includes(item.semester)
       || [item.unit, item.lesson, item.title, item.language, item.instructionsArabic].some(value => typeof value !== "string" || !value.trim())
       || !["VIDEO", "GAME", "SIMULATION", "ARTICLE"].includes(item.type)
       || typeof item.isFree !== "boolean" || !Number.isInteger(item.sortOrder) || item.sortOrder < 1 || item.sortOrder > 2147483647) {
@@ -26,7 +26,7 @@ export function validateScienceLessonResources(data: ScienceLessonResource[]) {
     try { url = new URL(item.url); }
     catch { throw new ScienceResourcesSeedError("رابط المورد غير صالح."); }
     if (url.protocol !== "https:" || !item.url.startsWith("https://") || url.username || url.password
-      || url.port || !["phet.colorado.edu", "spaceplace.nasa.gov"].includes(item.sourceHost) || url.hostname !== item.sourceHost) {
+      || url.port || !["phet.colorado.edu", "spaceplace.nasa.gov", "education.nationalgeographic.org"].includes(item.sourceHost) || url.hostname !== item.sourceHost) {
       throw new ScienceResourcesSeedError(`يجب أن يكون رابط «${item.title}» HTTPS وعلى مضيف المصدر المعتمد.`);
     }
     const key = lessonKey(item);
@@ -36,8 +36,8 @@ export function validateScienceLessonResources(data: ScienceLessonResource[]) {
     urls.add(urlKey); orders.add(orderKey);
     distribution.set(key, (distribution.get(key) ?? 0) + 1);
   }
-  if (distribution.size !== 4 || [...distribution.values()].sort().join() !== "1,1,1,2") {
-    throw new ScienceResourcesSeedError("يجب توزيع الموارد الخمسة على أربعة دروس: 1 / 1 / 1 / 2.");
+  if (distribution.size !== 7 || [...distribution.values()].sort().join() !== "1,1,1,1,1,1,2") {
+    throw new ScienceResourcesSeedError("يجب توزيع الموارد الثمانية على سبعة دروس: ستة دروس بمورد واحد ودرس بموردين.");
   }
   return { resources: data.length, lessons: distribution.size };
 }
