@@ -45,5 +45,5 @@ describe("GET admin questions", () => {
     const body = await response.json(); expect(body.message).toBe("تعذر تحميل بنك الأسئلة. حاولي مرة أخرى.");
     expect(JSON.stringify(body)).not.toContain("secret");
   });
-  it("exports GET only", () => expect(Object.keys(route)).toEqual(["GET"]));
+  it("exports GET and POST without update or delete", () => expect(Object.keys(route).sort()).toEqual(["GET", "POST"]));
 });

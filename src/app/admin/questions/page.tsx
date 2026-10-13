@@ -34,6 +34,7 @@ export default async function AdminQuestionsPage({ searchParams }: {
       <div className="mx-auto max-w-5xl space-y-6 text-[var(--najoom-navy)]">
         <Link href="/admin" className="text-sm underline">العودة إلى لوحة الإدارة</Link>
         <h1 className="text-2xl font-bold sm:text-3xl">بنك الأسئلة</h1>
+        <Link href="/admin/questions/new" className="inline-flex rounded-xl bg-[var(--najoom-navy)] px-5 py-3 font-semibold text-white focus:ring-2 focus:ring-[var(--najoom-gold)]">إضافة سؤال</Link>
         <QuestionFilters curriculum={curriculum} query={query} />
         <p role="status">عدد النتائج: {result.total}</p>
         {result.questions.length === 0 ? <p className="rounded-2xl bg-white p-6 text-slate-600">

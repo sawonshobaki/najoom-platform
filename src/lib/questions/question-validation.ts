@@ -24,6 +24,23 @@ export interface ValidatedQuestionInput extends Omit<CreateQuestionInput, "expla
   options: (QuestionOptionInput & { sortOrder: number })[];
 }
 
+export type QuestionCreateRequest =
+  | (Omit<CreateQuestionInput, "type"> & { type: "MULTIPLE_CHOICE" })
+  | (Omit<CreateQuestionInput, "type" | "options"> & { type: "TRUE_FALSE"; correctAnswer: boolean });
+
+/** Public create request: TRUE_FALSE labels are generated, never accepted from clients. */
+export function validateQuestionCreateRequest(value: unknown): ValidatedQuestionInput {
+  const input = record(value, ["lessonId", "learningObjectiveId", "text", "explanation", "type", "difficulty", "options", "correctAnswer"], "input");
+  if (input.type !== "TRUE_FALSE") return validateCreateQuestionInput(input);
+  record(input, ["lessonId", "learningObjectiveId", "text", "explanation", "type", "difficulty", "correctAnswer"], "input");
+  if (typeof input.correctAnswer !== "boolean") throw new QuestionValidationError("correctAnswer", "يجب اختيار صحيح أو خطأ.");
+  return validateCreateQuestionInput({
+    lessonId: input.lessonId, learningObjectiveId: input.learningObjectiveId,
+    text: input.text, explanation: input.explanation, type: "TRUE_FALSE", difficulty: input.difficulty,
+    options: createTrueFalseOptions(input.correctAnswer),
+  });
+}
+
 export class QuestionValidationError extends Error {
   constructor(public readonly field: string, message: string) {
     super(message);

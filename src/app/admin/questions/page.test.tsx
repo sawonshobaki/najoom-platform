@@ -18,6 +18,7 @@ describe("question bank read page", () => {
   it("renders the Arabic title and true empty state", async () => {
     const html = await render(); expect(html).toContain("بنك الأسئلة"); expect(html).toContain("لا توجد أسئلة في بنك الأسئلة حتى الآن.");
     expect(html).toContain("عدد النتائج: 0"); expect(html).not.toContain("<form"); expect(html).not.toContain("إنشاء سؤال");
+    expect(html).toContain('href="/admin/questions/new"'); expect(html).toContain("إضافة سؤال");
   });
   it("provides RTL and labels for all six filters", async () => {
     const html = await render(); expect(html).toContain('dir="rtl"');
