@@ -48,10 +48,10 @@ describe("question reads", () => {
     expect(mocks.count).toHaveBeenCalledWith({ where: { type: "MULTIPLE_CHOICE", difficulty: "EASY", lesson: { id: "l", unit: { id: "u", semester: { id: "s", gradeId: "g" } } } } });
   });
   it("returns only an option count and does not select answers or user records", async () => {
-    mocks.find.mockResolvedValue([{ id: "q", text: "سؤال", _count: { options: 2 } }]); mocks.count.mockResolvedValue(1);
-    expect((await listQuestions()).questions).toEqual([{ id: "q", text: "سؤال", optionCount: 2 }]);
+    mocks.find.mockResolvedValue([{ id: "q", text: "سؤال", _count: { options: 2, assessmentLinks: 0 } }]); mocks.count.mockResolvedValue(1);
+    expect((await listQuestions()).questions).toEqual([{ id: "q", text: "سؤال", optionCount: 2, isUsed: false }]);
     const select = mocks.find.mock.calls[0][0].select;
-    expect(select._count).toEqual({ select: { options: true } });
+    expect(select._count).toEqual({ select: { options: true, assessmentLinks: true } });
     for (const field of ["options", "createdBy", "reviewedBy", "createdById", "matchingPairs", "assessmentLinks"]) expect(select).not.toHaveProperty(field);
     expect(JSON.stringify(select)).not.toContain("isCorrect");
   });

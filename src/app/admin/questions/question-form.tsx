@@ -3,9 +3,9 @@
 import { useId, useReducer, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { QuestionDifficulty } from "@/generated/prisma/enums";
-import type { QuestionCreationData } from "@/lib/questions/question-service";
+import type { QuestionCreationData, QuestionDetail } from "@/lib/questions/question-service";
 import { validateQuestionCreateRequest, QuestionValidationError, type V1QuestionType, type QuestionCreateRequest } from "@/lib/questions/question-validation";
-import { buildQuestionCreatePayload, initialQuestionOptions, questionOptionsReducer } from "./question-form-state";
+import { buildQuestionCreatePayload, initialQuestionOptions, questionOptionsReducer, questionUpdatePayload } from "./question-form-state";
 
 export function TrueFalseAnswer({ name, value, onChange }: { name: string; value: boolean | null; onChange: (value: boolean) => void }) {
   return <fieldset className="min-w-0 space-y-3">
@@ -16,20 +16,20 @@ export function TrueFalseAnswer({ name, value, onChange }: { name: string; value
   </fieldset>;
 }
 
-export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
+export function QuestionForm({ curriculum, objectives, question }: QuestionCreationData & { question?: QuestionDetail }) {
   const router = useRouter();
   const formId = useId();
   const [gradeId, setGradeId] = useState("");
   const [semesterId, setSemesterId] = useState("");
   const [unitId, setUnitId] = useState("");
-  const [lessonId, setLessonId] = useState("");
-  const [objectiveId, setObjectiveId] = useState("");
-  const [text, setText] = useState("");
-  const [explanation, setExplanation] = useState("");
-  const [difficulty, setDifficulty] = useState<QuestionDifficulty>("MEDIUM");
-  const [type, setType] = useState<V1QuestionType>("MULTIPLE_CHOICE");
-  const [correctAnswer, setCorrectAnswer] = useState<boolean | null>(null);
-  const [options, dispatch] = useReducer(questionOptionsReducer, initialQuestionOptions);
+  const [lessonId, setLessonId] = useState(question?.lesson.id ?? "");
+  const [objectiveId, setObjectiveId] = useState(question?.learningObjective?.id ?? "");
+  const [text, setText] = useState(question?.text ?? "");
+  const [explanation, setExplanation] = useState(question?.explanation ?? "");
+  const [difficulty, setDifficulty] = useState<QuestionDifficulty>(question?.difficulty ?? "MEDIUM");
+  const [type, setType] = useState<V1QuestionType>(question?.type === "TRUE_FALSE" ? "TRUE_FALSE" : "MULTIPLE_CHOICE");
+  const [correctAnswer, setCorrectAnswer] = useState<boolean | null>(question?.type === "TRUE_FALSE" ? question.options.find(o => o.text === "صحيح")?.isCorrect ?? null : null);
+  const [options, dispatch] = useReducer(questionOptionsReducer, question?.options.map((o, index) => ({ key: index + 1, text: o.text, isCorrect: o.isCorrect })) ?? initialQuestionOptions);
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
@@ -42,7 +42,7 @@ export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current) return;
+    if (submitting.current || question?.isUsed) return;
     setError("");
     const common = {
       lessonId, learningObjectiveId: objectiveId || null, text, explanation,
@@ -57,7 +57,9 @@ export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
     submitting.current = true;
     setPending(true);
     try {
-      const response = await fetch("/api/admin/questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await fetch(question ? `/api/admin/questions/${encodeURIComponent(question.id)}` : "/api/admin/questions", {
+        method: question ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(question ? questionUpdatePayload(payload) : payload),
+      });
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok || !body || typeof body !== "object" || !("success" in body) || body.success !== true) {
         setError(body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : "تعذر حفظ السؤال. حاولي مرة أخرى.");
@@ -75,9 +77,14 @@ export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
     { key: "unit", label: "الوحدة", value: unitId, disabled: !semesterId, items: units, change: (id: string) => { setUnitId(id); setLessonId(""); setObjectiveId(""); } },
     { key: "lesson", label: "الدرس", value: lessonId, disabled: !unitId, items: lessons, change: (id: string) => { setLessonId(id); setObjectiveId(""); } },
   ];
-  return <form dir="rtl" onSubmit={submit} aria-label="إنشاء سؤال" aria-busy={pending} className="rounded-2xl bg-white p-4 shadow-sm sm:p-6">
+  if (question?.isUsed) return <p role="status">لا يمكن تعديل هذا السؤال لأنه مستخدم في تقييم.</p>;
+  return <form dir="rtl" onSubmit={submit} aria-label={question ? "تعديل سؤال" : "إنشاء سؤال"} aria-busy={pending} className="rounded-2xl bg-white p-4 shadow-sm sm:p-6">
     <fieldset disabled={pending} className="min-w-0 space-y-5">
       <legend className="sr-only">بيانات السؤال</legend>
+      {question ? <div className="space-y-2 break-words text-sm" aria-label="الدرس والنوع ثابتان">
+        <p>نوع السؤال: {type === "TRUE_FALSE" ? "صح أو خطأ" : "اختيار من متعدد"}</p>
+        <p>الدرس: {question.lesson.unit.semester.grade.name} ← {question.lesson.unit.semester.name} ({question.lesson.unit.semester.academicYear}) ← {question.lesson.unit.title} ← {question.lesson.title}</p>
+      </div> : <>
       <div><label htmlFor={`${formId}-type`}>نوع السؤال</label><select id={`${formId}-type`} value={type} onChange={e => { setType(e.target.value as V1QuestionType); setError(""); }} className={inputClass}>
         <option value="MULTIPLE_CHOICE">اختيار من متعدد</option><option value="TRUE_FALSE">صح أو خطأ</option>
       </select></div>
@@ -90,6 +97,7 @@ export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
           </select>
         </div>)}
       </div>
+      </>}
       <div>
         <label htmlFor={`${formId}-objective`}>الهدف التعليمي (اختياري)</label>
         <select id={`${formId}-objective`} value={objectiveId} onChange={e => setObjectiveId(e.target.value)} disabled={!lessonId || !lessonObjectives.length} className={inputClass}>
@@ -117,7 +125,7 @@ export function QuestionForm({ curriculum, objectives }: QuestionCreationData) {
         </div>)}
         <button type="button" disabled={options.length >= 6} onClick={() => dispatch({ type: "add" })} className={buttonClass}>إضافة خيار</button>
       </fieldset>}
-      <button type="submit" className="min-h-11 rounded-xl bg-[var(--najoom-navy)] px-5 py-3 font-semibold text-white disabled:opacity-50">{pending ? "جارٍ الحفظ…" : "حفظ السؤال"}</button>
+      <button type="submit" className="min-h-11 rounded-xl bg-[var(--najoom-navy)] px-5 py-3 font-semibold text-white disabled:opacity-50">{pending ? "جارٍ الحفظ…" : question ? "حفظ التعديلات" : "حفظ السؤال"}</button>
     </fieldset>
     {error ? <p role="alert" className="mt-4 text-red-700">{error}</p> : null}
   </form>;

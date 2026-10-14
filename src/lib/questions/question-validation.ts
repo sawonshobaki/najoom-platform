@@ -41,6 +41,19 @@ export function validateQuestionCreateRequest(value: unknown): ValidatedQuestion
   });
 }
 
+/** PATCH replaces the editable question content; omitted optional fields are preserved. */
+export function validateQuestionUpdateRequest(value: unknown, current: {
+  lessonId: string; type: V1QuestionType; explanation: string | null; learningObjectiveId: string | null;
+}): ValidatedQuestionInput {
+  const input = record(value, ["text", "explanation", "difficulty", "learningObjectiveId", ...(current.type === "TRUE_FALSE" ? ["correctAnswer"] : ["options"])], "input");
+  return validateQuestionCreateRequest({
+    lessonId: current.lessonId, type: current.type, text: input.text, difficulty: input.difficulty,
+    explanation: input.explanation === undefined ? current.explanation ?? undefined : input.explanation === null ? "" : input.explanation,
+    learningObjectiveId: input.learningObjectiveId === undefined ? current.learningObjectiveId : input.learningObjectiveId,
+    ...(current.type === "TRUE_FALSE" ? { correctAnswer: input.correctAnswer } : { options: input.options }),
+  });
+}
+
 export class QuestionValidationError extends Error {
   constructor(public readonly field: string, message: string) {
     super(message);

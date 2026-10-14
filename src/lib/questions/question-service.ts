@@ -3,7 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/auth/authorization";
 import { prisma } from "@/lib/db/prisma";
 import { validateQuestionListInput, type QuestionListInput } from "./question-read-query";
-import { validateQuestionCreateRequest } from "./question-validation";
+import { validateQuestionCreateRequest, validateQuestionUpdateRequest, QuestionValidationError } from "./question-validation";
 
 const questionListSelect = {
   id: true, text: true, type: true, difficulty: true, explanation: true,
@@ -14,7 +14,7 @@ const questionListSelect = {
       id: true, name: true, academicYear: true, grade: { select: { id: true, name: true } },
     } },
   } } } },
-  _count: { select: { options: true } },
+  _count: { select: { options: true, assessmentLinks: true } },
 } satisfies Prisma.QuestionSelect;
 
 export async function listQuestions(input: QuestionListInput = {}) {
@@ -41,7 +41,7 @@ export async function listQuestions(input: QuestionListInput = {}) {
       skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
     prisma.question.count({ where }),
   ], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
-  return { questions: rows.map(({ _count, ...question }) => ({ ...question, optionCount: _count.options })),
+  return { questions: rows.map(({ _count, ...question }) => ({ ...question, optionCount: _count.options, isUsed: _count.assessmentLinks > 0 })),
     total, page: query.page, pageSize: query.pageSize, totalPages: Math.ceil(total / query.pageSize) };
 }
 
@@ -112,3 +112,87 @@ export async function getQuestionCreationData() {
   return { curriculum, objectives };
 }
 export type QuestionCreationData = Awaited<ReturnType<typeof getQuestionCreationData>>;
+
+export class QuestionMutationError extends Error {
+  constructor(public readonly code: "question_not_found" | "question_used" | "question_conflict") {
+    super({ question_not_found: "السؤال غير موجود.", question_used: "لا يمكن تعديل أو حذف هذا السؤال لأنه مستخدم في تقييم.",
+      question_conflict: "تغيّر السؤال أثناء العملية. أعيدي تحميل الصفحة وحاولي مرة أخرى." }[code]);
+  }
+}
+
+const questionDetailSelect = {
+  ...questionListSelect,
+  options: { orderBy: { sortOrder: "asc" }, select: { id: true, text: true, isCorrect: true, sortOrder: true } },
+} satisfies Prisma.QuestionSelect;
+type QuestionRow = Prisma.QuestionGetPayload<{ select: typeof questionDetailSelect }>;
+function questionDetails({ _count, ...question }: QuestionRow) {
+  return { ...question, isUsed: _count.assessmentLinks > 0 };
+}
+function questionIdValue(id: string) {
+  if (typeof id !== "string" || !id.trim() || id.trim().length > 128) throw new QuestionValidationError("questionId", "يجب تحديد سؤال صالح.");
+  return id.trim();
+}
+
+export async function getQuestion(questionId: string) {
+  await requireAdmin();
+  const question = await prisma.question.findUnique({ where: { id: questionIdValue(questionId) }, select: questionDetailSelect });
+  if (!question) throw new QuestionMutationError("question_not_found");
+  return questionDetails(question);
+}
+export type QuestionDetail = Awaited<ReturnType<typeof getQuestion>>;
+
+async function lockUnusedQuestion(tx: Prisma.TransactionClient, id: string) {
+  // FOR UPDATE conflicts with FK KEY SHARE locks from new AssessmentQuestion links.
+  // ReadCommitted makes the following read see links committed while we waited.
+  await tx.$queryRaw`SELECT "id" FROM "questions" WHERE "id" = ${id} FOR UPDATE`;
+  const question = await tx.question.findUnique({ where: { id }, select: questionDetailSelect });
+  if (!question) throw new QuestionMutationError("question_not_found");
+  if (question._count.assessmentLinks > 0) throw new QuestionMutationError("question_used");
+  if (question.type !== "MULTIPLE_CHOICE" && question.type !== "TRUE_FALSE") throw new QuestionValidationError("type", "نوع السؤال غير مدعوم في هذه المرحلة.");
+  return { ...question, type: question.type };
+}
+function mutationFailure(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2003") throw new QuestionMutationError("question_conflict");
+    if (error.code === "P2025") throw new QuestionMutationError("question_not_found");
+    if (error.code === "P2034") throw new QuestionMutationError("question_conflict");
+  }
+  throw error;
+}
+
+export async function updateQuestion(questionId: string, input: unknown) {
+  await requireAdmin();
+  const id = questionIdValue(questionId);
+  try {
+    return await prisma.$transaction(async tx => {
+      const current = await lockUnusedQuestion(tx, id);
+      const data = validateQuestionUpdateRequest(input, { lessonId: current.lesson.id, type: current.type,
+        explanation: current.explanation, learningObjectiveId: current.learningObjective?.id ?? null });
+      if (data.learningObjectiveId) {
+        const objective = await tx.learningObjective.findUnique({ where: { id: data.learningObjectiveId }, select: { lessonId: true } });
+        if (!objective) throw new QuestionCreateError("objective_not_found");
+        if (objective.lessonId !== current.lesson.id) throw new QuestionCreateError("objective_lesson_mismatch");
+      }
+      await tx.questionOption.deleteMany({ where: { questionId: id } });
+      const updated = await tx.question.update({ where: { id }, data: {
+        text: data.text, explanation: data.explanation, difficulty: data.difficulty, learningObjectiveId: data.learningObjectiveId,
+        options: { create: data.options.map(o => ({ text: o.text, isCorrect: o.isCorrect, sortOrder: o.sortOrder })) },
+      }, select: questionDetailSelect });
+      return questionDetails(updated);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  } catch (error) { return mutationFailure(error); }
+}
+
+export async function deleteQuestion(questionId: string) {
+  await requireAdmin();
+  const id = questionIdValue(questionId);
+  try {
+    await prisma.$transaction(async tx => {
+      await lockUnusedQuestion(tx, id);
+      await tx.question.delete({ where: { id } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") throw new QuestionMutationError("question_used");
+    mutationFailure(error);
+  }
+}

@@ -33,9 +33,9 @@ describe("GET admin questions", () => {
     } }));
   });
   it("returns counts without answer payloads", async () => {
-    mocks.find.mockResolvedValue([{ id: "q", text: "سؤال", _count: { options: 2 } }]); mocks.count.mockResolvedValue(1);
+    mocks.find.mockResolvedValue([{ id: "q", text: "سؤال", _count: { options: 2, assessmentLinks: 0 } }]); mocks.count.mockResolvedValue(1);
     const body = await (await request()).json();
-    expect(body.questions).toEqual([{ id: "q", text: "سؤال", optionCount: 2 }]);
+    expect(body.questions).toEqual([{ id: "q", text: "سؤال", optionCount: 2, isUsed: false }]);
     expect(JSON.stringify(body)).not.toMatch(/isCorrect|_count/);
   });
   it("does not leak internal database errors", async () => {

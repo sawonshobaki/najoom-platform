@@ -42,3 +42,9 @@ export function buildQuestionCreatePayload(
   }
   return { ...common, type, options: questionOptionPayload(options) };
 }
+
+export function questionUpdatePayload(payload: QuestionCreateRequest) {
+  const { lessonId, type, ...editable } = payload;
+  void lessonId; void type;
+  return editable;
+}

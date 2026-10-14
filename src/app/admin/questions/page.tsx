@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth/authorization";
 import { getQuestionFilterCurriculum, listQuestions } from "@/lib/questions/question-service";
 import { parseQuestionQuery, questionListUrl, QuestionReadValidationError, QUESTION_FILTER_KEYS } from "@/lib/questions/question-read-query";
 import { QuestionFilters } from "./question-filters";
+import { QuestionDeleteButton } from "./question-delete-button";
 
 const typeLabels = { MULTIPLE_CHOICE: "اختيار من متعدد", TRUE_FALSE: "صح أو خطأ", MULTIPLE_SELECT: "اختيار متعدد الإجابات", MATCHING: "مطابقة", ORDERING: "ترتيب", FILL_IN_BLANK: "إكمال الفراغ" };
 const difficultyLabels = { EASY: "سهل", MEDIUM: "متوسط", HARD: "صعب" };
@@ -47,6 +48,11 @@ export default async function AdminQuestionsPage({ searchParams }: {
             </p>
             <p className="mt-2 text-sm">النوع: {typeLabels[question.type]} · الصعوبة: {difficultyLabels[question.difficulty]} · عدد الخيارات: {question.optionCount}</p>
             {question.learningObjective ? <p className="mt-2 break-words text-sm">الهدف التعليمي: {question.learningObjective.title}</p> : null}
+            {question.type === "MULTIPLE_CHOICE" || question.type === "TRUE_FALSE" ? <div className="mt-4 flex flex-wrap items-start gap-3">
+              {question.isUsed ? <span className="py-2 text-sm text-slate-600">السؤال مستخدم في تقييم؛ التعديل والحذف غير متاحين.</span>
+                : <Link href={`/admin/questions/${encodeURIComponent(question.id)}/edit`} className="min-h-11 rounded-xl border border-slate-300 px-4 py-2 underline">تعديل</Link>}
+              <QuestionDeleteButton questionId={question.id} isUsed={question.isUsed} />
+            </div> : null}
           </li>)}
         </ul>}
         {result.totalPages > 1 || query.page > 1 ? <nav aria-label="صفحات الأسئلة" className="flex flex-wrap items-center gap-4">
