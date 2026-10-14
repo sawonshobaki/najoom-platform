@@ -73,7 +73,7 @@ export function QuestionForm({ curriculum, objectives, question }: QuestionCreat
 
   const selectors = [
     { key: "grade", label: "الصف", value: gradeId, disabled: false, items: curriculum.map(g => ({ id: g.id, title: g.name })), change: (id: string) => { setGradeId(id); setSemesterId(""); setUnitId(""); setLessonId(""); setObjectiveId(""); } },
-    { key: "semester", label: "الفصل الدراسي", value: semesterId, disabled: !gradeId, items: semesters.map(s => ({ id: s.id, title: `${s.name} (${s.academicYear})` })), change: (id: string) => { setSemesterId(id); setUnitId(""); setLessonId(""); setObjectiveId(""); } },
+    { key: "semester", label: "الفصل الدراسي", value: semesterId, disabled: !gradeId, items: semesters.map(s => ({ id: s.id, title: `${s.name} (\u2066${s.academicYear}\u2069)` })), change: (id: string) => { setSemesterId(id); setUnitId(""); setLessonId(""); setObjectiveId(""); } },
     { key: "unit", label: "الوحدة", value: unitId, disabled: !semesterId, items: units, change: (id: string) => { setUnitId(id); setLessonId(""); setObjectiveId(""); } },
     { key: "lesson", label: "الدرس", value: lessonId, disabled: !unitId, items: lessons, change: (id: string) => { setLessonId(id); setObjectiveId(""); } },
   ];
@@ -83,7 +83,7 @@ export function QuestionForm({ curriculum, objectives, question }: QuestionCreat
       <legend className="sr-only">بيانات السؤال</legend>
       {question ? <div className="space-y-2 break-words text-sm" aria-label="الدرس والنوع ثابتان">
         <p>نوع السؤال: {type === "TRUE_FALSE" ? "صح أو خطأ" : "اختيار من متعدد"}</p>
-        <p>الدرس: {question.lesson.unit.semester.grade.name} ← {question.lesson.unit.semester.name} ({question.lesson.unit.semester.academicYear}) ← {question.lesson.unit.title} ← {question.lesson.title}</p>
+        <p>الدرس: {question.lesson.unit.semester.grade.name} ← {question.lesson.unit.semester.name} <bdi dir="ltr" className="whitespace-nowrap">({question.lesson.unit.semester.academicYear})</bdi> ← {question.lesson.unit.title} ← {question.lesson.title}</p>
       </div> : <>
       <div><label htmlFor={`${formId}-type`}>نوع السؤال</label><select id={`${formId}-type`} value={type} onChange={e => { setType(e.target.value as V1QuestionType); setError(""); }} className={inputClass}>
         <option value="MULTIPLE_CHOICE">اختيار من متعدد</option><option value="TRUE_FALSE">صح أو خطأ</option>

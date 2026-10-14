@@ -34,6 +34,7 @@ describe("question bank read page", () => {
   it("cascades curriculum choices from the selected parent", () => {
     const html = renderToStaticMarkup(<QuestionFilters curriculum={curriculum} query={{ gradeId: "g", page: 1, pageSize: 20 }} />);
     expect(html).toContain("الفصل الأول"); expect(html).toContain("الوحدة المحددة"); expect(html).toContain("درس محدد"); expect(html).not.toContain("فصل آخر");
+    expect(html).toContain("\u20662026-2027\u2069");
   });
   it("distinguishes an empty filter result", async () => {
     expect(await render({ lessonId: "l" })).toContain("لا توجد أسئلة تطابق الفلاتر المحددة.");
@@ -64,6 +65,7 @@ describe("question bank read page", () => {
       } } } }], total: 1, page: 1, pageSize: 20, totalPages: 1 });
     const html = await render();
     for (const value of ["سؤال تجريبي للاختبار فقط", "صح أو خطأ", "سهل", "عدد الخيارات: 2", "الخلية", "هدف الاختبار"]) expect(html).toContain(value);
+    expect(html).toContain('<bdi dir="ltr" class="whitespace-nowrap">(2026-2027)</bdi>');
     expect(html).not.toContain("isCorrect");
   });
   it("requires admin before any page data access", async () => {

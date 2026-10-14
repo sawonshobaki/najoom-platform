@@ -18,6 +18,7 @@ it("loads the edit page with fixed curriculum and type, labelled editable fields
   const html = renderToStaticMarkup(await EditPage({ params: Promise.resolve({ questionId: "q" }) }));
   for (const text of ["تعديل السؤال", "الصف السادس", "الفصل الأول", "من الخلية إلى الجسم", "الخلية", "اختيار من متعدد", "حفظ التعديلات"]) expect(html).toContain(text);
   expect(html).toContain('dir="rtl"'); expect(html).not.toContain('value="MULTIPLE_CHOICE"'); expect(html).not.toContain('value="l"');
+  expect(html).toContain('<bdi dir="ltr" class="whitespace-nowrap">(2026-2027)</bdi>');
   for (const id of [...html.matchAll(/<(?:input|select|textarea)[^>]*\bid="([^"]+)"/g)].map(m => m[1])) expect(html).toContain(`for="${id}"`);
 });
 it("renders TRUE_FALSE as fixed labels and radios only", () => {

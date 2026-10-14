@@ -44,7 +44,7 @@ export default async function AdminQuestionsPage({ searchParams }: {
           {result.questions.map(question => <li key={question.id} className="min-w-0 rounded-2xl border border-black/5 bg-white p-5 shadow-sm">
             <h2 className="whitespace-pre-wrap break-words font-semibold">{question.text}</h2>
             <p className="mt-2 break-words text-sm text-slate-600">
-              {question.lesson.unit.semester.grade.name} ← {question.lesson.unit.semester.name} ({question.lesson.unit.semester.academicYear}) ← {question.lesson.unit.title} ← {question.lesson.title}
+              {question.lesson.unit.semester.grade.name} ← {question.lesson.unit.semester.name} <bdi dir="ltr" className="whitespace-nowrap">({question.lesson.unit.semester.academicYear})</bdi> ← {question.lesson.unit.title} ← {question.lesson.title}
             </p>
             <p className="mt-2 text-sm">النوع: {typeLabels[question.type]} · الصعوبة: {difficultyLabels[question.difficulty]} · عدد الخيارات: {question.optionCount}</p>
             {question.learningObjective ? <p className="mt-2 break-words text-sm">الهدف التعليمي: {question.learningObjective.title}</p> : null}

@@ -13,7 +13,7 @@ export function QuestionFilters({ curriculum, query }: { curriculum: QuestionFil
   const lessons = units.filter(u => !query.unitId || u.id === query.unitId).flatMap(u => u.lessons);
   const filters = [
     { key: "gradeId", label: "الصف", options: curriculum.map(g => ({ id: g.id, label: g.name })) },
-    { key: "semesterId", label: "الفصل الدراسي", options: semesters.map(s => ({ id: s.id, label: `${s.name} (${s.academicYear})` })) },
+    { key: "semesterId", label: "الفصل الدراسي", options: semesters.map(s => ({ id: s.id, label: `${s.name} (\u2066${s.academicYear}\u2069)` })) },
     { key: "unitId", label: "الوحدة", options: units.map(u => ({ id: u.id, label: u.title })) },
     { key: "lessonId", label: "الدرس", options: lessons.map(l => ({ id: l.id, label: l.title })) },
     { key: "type", label: "النوع", options: [{ id: "MULTIPLE_CHOICE", label: "اختيار من متعدد" }, { id: "TRUE_FALSE", label: "صح أو خطأ" }] },
