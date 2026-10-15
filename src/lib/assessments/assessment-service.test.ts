@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(), transaction: vi.fn(), lesson: vi.fn(), questions: vi.fn(), create: vi.fn(),
-  list: vi.fn(), get: vi.fn(), grades: vi.fn(), creationQuestions: vi.fn(),
+  list: vi.fn(), get: vi.fn(), grades: vi.fn(), creationQuestions: vi.fn(), lock: vi.fn(), updateMany: vi.fn(),
 }));
 vi.mock("@/lib/auth/authorization", () => ({ requireAdmin: mocks.auth }));
 vi.mock("@/lib/db/prisma", () => ({ prisma: {
@@ -10,7 +10,7 @@ vi.mock("@/lib/db/prisma", () => ({ prisma: {
   assessment: { findMany: mocks.list, findUnique: mocks.get },
   grade: { findMany: mocks.grades }, question: { findMany: mocks.creationQuestions },
 } }));
-import { createAssessment, getAssessment, getAssessmentCreationData, listAssessments } from "./assessment-service";
+import { closeAssessment, createAssessment, getAssessment, getAssessmentCreationData, listAssessments, publishAssessment } from "./assessment-service";
 
 const input = () => ({ title: " اختبار ", lessonId: "lesson-1", questionIds: ["q2", "q1"] });
 const lesson = { id: "lesson-1", unit: { semester: { gradeId: "grade-6" } } };
@@ -18,13 +18,55 @@ const questions = [
   { id: "q1", lessonId: "lesson-1", type: "MULTIPLE_CHOICE" },
   { id: "q2", lessonId: "lesson-1", type: "TRUE_FALSE" },
 ];
-const tx = { lesson: { findUnique: mocks.lesson }, question: { findMany: mocks.questions }, assessment: { create: mocks.create } };
+const tx = { lesson: { findUnique: mocks.lesson }, question: { findMany: mocks.questions }, assessment: { create: mocks.create, findUnique: mocks.get, updateMany: mocks.updateMany }, $queryRaw: mocks.lock };
 
 beforeEach(() => {
   vi.resetAllMocks(); mocks.auth.mockResolvedValue({ id: "admin-1" }); mocks.lesson.mockResolvedValue(lesson);
   mocks.questions.mockResolvedValue(questions); mocks.create.mockResolvedValue({ id: "assessment-1" });
   mocks.transaction.mockImplementation((callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
   mocks.list.mockResolvedValue([]); mocks.grades.mockResolvedValue([]); mocks.creationQuestions.mockResolvedValue([]);
+  mocks.lock.mockResolvedValue([]); mocks.updateMany.mockResolvedValue({ count: 1 });
+});
+
+describe("assessment status workflow", () => {
+  const publishable = (status = "DRAFT") => ({ id: "a1", status, questions: [
+    { questionId: "q1", sortOrder: 1, pointsOverride: null, question: { type: "MULTIPLE_CHOICE", points: 2, options: [{ text: "أ", sortOrder: 1, isCorrect: true }, { text: "ب", sortOrder: 2, isCorrect: false }] } },
+    { questionId: "q2", sortOrder: 2, pointsOverride: 3, question: { type: "TRUE_FALSE", points: 1, options: [{ text: "صحيح", sortOrder: 1, isCorrect: true }, { text: "خطأ", sortOrder: 2, isCorrect: false }] } },
+  ] });
+  it("publishes a valid draft inside a locked transaction", async () => {
+    mocks.get.mockResolvedValue(publishable());
+    await expect(publishAssessment(" a1 ")).resolves.toEqual({ id: "a1", status: "PUBLISHED" });
+    expect(mocks.lock).toHaveBeenCalledOnce();
+    expect(mocks.updateMany).toHaveBeenCalledWith({ where: { id: "a1", status: "DRAFT" }, data: { status: "PUBLISHED" } });
+  });
+  it("closes only a published assessment", async () => {
+    mocks.get.mockResolvedValue(publishable("PUBLISHED"));
+    await expect(closeAssessment("a1")).resolves.toEqual({ id: "a1", status: "CLOSED" });
+    expect(mocks.updateMany).toHaveBeenCalledWith({ where: { id: "a1", status: "PUBLISHED" }, data: { status: "CLOSED" } });
+  });
+  it.each([["DRAFT", closeAssessment], ["PUBLISHED", publishAssessment], ["CLOSED", publishAssessment], ["ARCHIVED", closeAssessment]] as const)
+    ("rejects invalid transition from %s", async (status, action) => {
+      mocks.get.mockResolvedValue(publishable(status));
+      await expect(action("a1")).rejects.toMatchObject({ code: "assessment_invalid_transition" });
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+    });
+  it("rejects publishing an empty assessment", async () => {
+    mocks.get.mockResolvedValue({ ...publishable(), questions: [] });
+    await expect(publishAssessment("a1")).rejects.toMatchObject({ code: "assessment_empty" });
+  });
+  it.each([
+    [{ ...publishable(), questions: [{ ...publishable().questions[0], sortOrder: 2 }] }],
+    [{ ...publishable(), questions: [{ ...publishable().questions[0], question: { ...publishable().questions[0].question, type: "MATCHING" } }] }],
+    [{ ...publishable(), questions: [{ ...publishable().questions[0], question: { ...publishable().questions[0].question, points: 0 } }] }],
+    [{ ...publishable(), questions: [{ ...publishable().questions[0], question: { ...publishable().questions[0].question, options: [{ text: "أ", sortOrder: 1, isCorrect: true }, { text: " أ ", sortOrder: 2, isCorrect: false }] } }] }],
+  ])("rejects invalid publish structure", async assessment => {
+    mocks.get.mockResolvedValue(assessment);
+    await expect(publishAssessment("a1")).rejects.toMatchObject({ code: "assessment_invalid_questions" });
+  });
+  it("maps a lost status race to conflict", async () => {
+    mocks.get.mockResolvedValue(publishable()); mocks.updateMany.mockResolvedValue({ count: 0 });
+    await expect(publishAssessment("a1")).rejects.toMatchObject({ code: "assessment_conflict" });
+  });
 });
 
 describe("createAssessment", () => {

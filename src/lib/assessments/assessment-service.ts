@@ -39,15 +39,29 @@ function summarize(row: AssessmentListRow) {
 }
 
 export class AssessmentServiceError extends Error {
-  constructor(public readonly code: "lesson_not_found" | "question_not_found" | "question_lesson_mismatch" | "question_type_unsupported" | "assessment_not_found") {
+  constructor(public readonly code:
+    | "lesson_not_found" | "question_not_found" | "question_lesson_mismatch" | "question_type_unsupported"
+    | "assessment_not_found" | "assessment_invalid_transition" | "assessment_empty"
+    | "assessment_invalid_questions" | "assessment_conflict") {
     super({
       lesson_not_found: "الدرس المحدد غير موجود.",
       question_not_found: "أحد الأسئلة المحددة غير موجود.",
       question_lesson_mismatch: "يجب أن تنتمي جميع الأسئلة إلى الدرس المحدد.",
       question_type_unsupported: "أحد الأسئلة المحددة من نوع غير مدعوم في هذه المرحلة.",
       assessment_not_found: "الاختبار غير موجود.",
+      assessment_invalid_transition: "لا يمكن تغيير حالة الاختبار بهذه الطريقة.",
+      assessment_empty: "لا يمكن نشر اختبار لا يحتوي أسئلة.",
+      assessment_invalid_questions: "تعذر نشر الاختبار لأن أسئلته أو ترتيبها أو نقاطها غير صالحة.",
+      assessment_conflict: "تغيّرت حالة الاختبار أثناء العملية. أعيدي تحميل الصفحة.",
     }[code]);
   }
+}
+
+function validAssessmentId(value: string) {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > 128) {
+    throw new AssessmentServiceError("assessment_not_found");
+  }
+  return value.trim();
 }
 
 export async function listAssessments() {
@@ -61,16 +75,62 @@ export async function listAssessments() {
 
 export async function getAssessment(assessmentId: string) {
   await requireAdmin();
-  if (typeof assessmentId !== "string" || !assessmentId.trim() || assessmentId.trim().length > 128) {
-    throw new AssessmentServiceError("assessment_not_found");
-  }
-  const row = await prisma.assessment.findUnique({ where: { id: assessmentId.trim() }, select: assessmentDetailSelect });
+  const row = await prisma.assessment.findUnique({ where: { id: validAssessmentId(assessmentId) }, select: assessmentDetailSelect });
   if (!row) throw new AssessmentServiceError("assessment_not_found");
   return {
     ...row,
     questionCount: row.questions.length,
     totalPoints: row.questions.reduce((sum, item) => sum + (item.pointsOverride ?? item.question.points), 0),
   };
+}
+
+async function transitionAssessment(assessmentIdInput: string, target: "PUBLISHED" | "CLOSED") {
+  await requireAdmin();
+  const assessmentId = validAssessmentId(assessmentIdInput);
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "assessments" WHERE "id" = ${assessmentId} FOR UPDATE`);
+    const assessment = await tx.assessment.findUnique({ where: { id: assessmentId }, select: {
+      id: true, status: true,
+      questions: { orderBy: { sortOrder: "asc" }, select: {
+        questionId: true, sortOrder: true, pointsOverride: true,
+        question: { select: { type: true, points: true, options: { orderBy: { sortOrder: "asc" }, select: { text: true, sortOrder: true, isCorrect: true } } } },
+      } },
+    } });
+    if (!assessment) throw new AssessmentServiceError("assessment_not_found");
+    const expected = target === "PUBLISHED" ? "DRAFT" : "PUBLISHED";
+    if (assessment.status !== expected) throw new AssessmentServiceError("assessment_invalid_transition");
+    if (target === "PUBLISHED") {
+      if (!assessment.questions.length) throw new AssessmentServiceError("assessment_empty");
+      const questionIds = new Set(assessment.questions.map(item => item.questionId));
+      const validQuestions = questionIds.size === assessment.questions.length
+        && assessment.questions.every((item, index) => {
+          const options = item.question.options;
+          const ordered = options.every((option, optionIndex) => option.sortOrder === optionIndex + 1);
+          const oneCorrect = options.filter(option => option.isCorrect).length === 1;
+          const validOptions = item.question.type === "MULTIPLE_CHOICE"
+            ? options.length >= 2 && options.length <= 6 && oneCorrect && ordered
+              && options.every(option => option.text.trim())
+              && new Set(options.map(option => option.text.trim().toLocaleLowerCase("ar"))).size === options.length
+            : item.question.type === "TRUE_FALSE"
+              ? options.length === 2 && oneCorrect && ordered && options[0]?.text === "صحيح" && options[1]?.text === "خطأ"
+              : false;
+          return item.sortOrder === index + 1 && validOptions && (item.pointsOverride ?? item.question.points) > 0;
+        });
+      const totalPoints = assessment.questions.reduce((sum, item) => sum + (item.pointsOverride ?? item.question.points), 0);
+      if (!validQuestions || totalPoints <= 0) throw new AssessmentServiceError("assessment_invalid_questions");
+    }
+    const updated = await tx.assessment.updateMany({ where: { id: assessmentId, status: expected }, data: { status: target } });
+    if (updated.count !== 1) throw new AssessmentServiceError("assessment_conflict");
+    return { id: assessmentId, status: target };
+  });
+}
+
+export function publishAssessment(assessmentId: string) {
+  return transitionAssessment(assessmentId, "PUBLISHED");
+}
+
+export function closeAssessment(assessmentId: string) {
+  return transitionAssessment(assessmentId, "CLOSED");
 }
 
 export async function createAssessment(input: unknown) {

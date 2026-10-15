@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listAssessments } from "@/lib/assessments/assessment-service";
+import { AssessmentStatusAction } from "./assessment-status-action";
 
 const statusLabels = { DRAFT: "مسودة", PUBLISHED: "منشور", CLOSED: "مغلق", ARCHIVED: "مؤرشف" };
 
@@ -22,6 +23,11 @@ export default async function AdminAssessmentsPage() {
             </p>
             <p className="mt-2 text-sm">الأسئلة: {assessment.questionCount} · مجموع النقاط: {assessment.totalPoints} · الحالة: {statusLabels[assessment.status]}</p>
             <p className="mt-2 text-sm text-slate-600">تاريخ الإنشاء: <time dateTime={assessment.createdAt.toISOString()}>{assessment.createdAt.toLocaleDateString("ar-JO")}</time></p>
+            <div className="mt-4 flex flex-wrap items-start gap-3">
+              {assessment.status === "DRAFT" ? <AssessmentStatusAction assessmentId={assessment.id} target="PUBLISHED" /> : null}
+              {assessment.status === "PUBLISHED" ? <AssessmentStatusAction assessmentId={assessment.id} target="CLOSED" /> : null}
+              <Link href={`/admin/assessments/${assessment.id}/results`} className="inline-flex min-h-11 items-center rounded-xl bg-slate-100 px-4 py-2 font-semibold focus:ring-2 focus:ring-[var(--najoom-gold)]">عرض النتائج</Link>
+            </div>
           </li>)}
         </ul>}
     </div>

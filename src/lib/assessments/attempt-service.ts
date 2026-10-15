@@ -85,9 +85,10 @@ export async function startAssessmentAttempt(assessmentIdInput: string) {
   const assessmentId = validAttemptId(assessmentIdInput);
   try {
     return await prisma.$transaction(async tx => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "assessments" WHERE "id" = ${assessmentId} FOR UPDATE`);
       const assessment = await tx.assessment.findUnique({ where: { id: assessmentId }, select: assessmentForStartSelect });
       if (!assessment) throw new AttemptServiceError("assessment_not_found");
-      if (assessment.status === "CLOSED" || assessment.status === "ARCHIVED") throw new AttemptServiceError("assessment_unavailable");
+      if (assessment.status !== "PUBLISHED") throw new AttemptServiceError("assessment_unavailable");
       if (!assessment.questions.length) throw new AttemptServiceError("assessment_empty");
       const existing = await tx.assessmentAttempt.findUnique({ where: { assessmentId_studentId: { assessmentId, studentId: student.id } }, select: { id: true } });
       if (existing) throw new AttemptServiceError("attempt_exists");

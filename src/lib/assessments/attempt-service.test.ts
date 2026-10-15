@@ -12,7 +12,7 @@ const snapshot = (patch: Partial<QuestionSnapshot> = {}): QuestionSnapshot => ({
   options: [{ optionId: "o1", text: "صحيح", sortOrder: 1, isCorrect: true }, { optionId: "o2", text: "غير صحيح", sortOrder: 2, isCorrect: false }], ...patch });
 const assessmentQuestion = (patch: Record<string, unknown> = {}) => ({ id: "aq1", sortOrder: 1, pointsOverride: null, questionSnapshot: null,
   question: { id: "q1", text: "سؤال حي", type: "MULTIPLE_CHOICE", points: 2, options: snapshot().options.map(o => ({ id: o.optionId, text: o.text, sortOrder: o.sortOrder, isCorrect: o.isCorrect })) }, ...patch });
-const startAssessment = (questions = [assessmentQuestion()]) => ({ id: "a1", title: "اختبار", status: "DRAFT", durationSeconds: 0, lesson: { id: "l1", title: "الخلية" }, questions });
+const startAssessment = (questions = [assessmentQuestion()]) => ({ id: "a1", title: "اختبار", status: "PUBLISHED", durationSeconds: 0, lesson: { id: "l1", title: "الخلية" }, questions });
 const tx = { assessment: { findUnique: mocks.assessment }, assessmentAttempt: { findUnique: mocks.existing, create: mocks.createAttempt, update: mocks.updateAttempt },
   assessmentQuestion: { updateMany: mocks.snapshot }, assessmentAnswer: { upsert: mocks.upsert, update: mocks.updateAnswer }, $queryRaw: mocks.lock };
 
@@ -38,6 +38,7 @@ describe("startAssessmentAttempt", () => {
     expect(JSON.stringify(result)).not.toContain("isCorrect");
     expect(mocks.snapshot.mock.calls[0][0].data.questionSnapshot).toMatchObject({ questionId: "q1", text: "سؤال حي", points: 2, options: [{ isCorrect: true }, { isCorrect: false }] });
     expect(mocks.createAttempt).toHaveBeenCalledWith({ data: { assessmentId: "a1", studentId: "student-1" }, select: { id: true, startedAt: true, status: true } });
+    expect(mocks.lock).toHaveBeenCalledOnce();
   });
   it("preserves question order and effective points", async () => {
     mocks.assessment.mockResolvedValue(startAssessment([assessmentQuestion({ id: "aq2", sortOrder: 1, pointsOverride: 5 }), assessmentQuestion({ id: "aq1", sortOrder: 2 })]));
@@ -47,7 +48,7 @@ describe("startAssessmentAttempt", () => {
     mocks.assessment.mockResolvedValue(startAssessment([assessmentQuestion({ questionSnapshot: snapshot({ text: "نسخة قديمة" }) })]));
     expect((await startAssessmentAttempt("a1")).questions[0].text).toBe("نسخة قديمة"); expect(mocks.snapshot).not.toHaveBeenCalled();
   });
-  it.each([[null, "assessment_not_found"], [{ ...startAssessment(), status: "CLOSED" }, "assessment_unavailable"], [startAssessment([]), "assessment_empty"]] as const)
+  it.each([[null, "assessment_not_found"], [{ ...startAssessment(), status: "DRAFT" }, "assessment_unavailable"], [{ ...startAssessment(), status: "CLOSED" }, "assessment_unavailable"], [{ ...startAssessment(), status: "ARCHIVED" }, "assessment_unavailable"], [startAssessment([]), "assessment_empty"]] as const)
     ("rejects an unavailable assessment", async (value, code) => { mocks.assessment.mockResolvedValue(value); await expect(startAssessmentAttempt("a1")).rejects.toMatchObject({ code }); });
   it("rejects unsupported question types", async () => {
     mocks.assessment.mockResolvedValue(startAssessment([assessmentQuestion({ question: { ...assessmentQuestion().question, type: "MATCHING" } })]));
@@ -116,6 +117,12 @@ describe("submitAssessmentAttempt", () => {
   it("uses snapshot correctness after the question bank could change", async () => {
     mocks.existing.mockResolvedValue(submission([{ id: "x", assessmentQuestionId: "aq1", answerPayload: { optionId: "o1" } }]));
     const result = await submitAssessmentAttempt("attempt-1"); expect(result.questionResults[0].correct).toBe(true);
+    expect(mocks.assessment).not.toHaveBeenCalled();
+  });
+  it("allows an active attempt to finish after its assessment is closed", async () => {
+    mocks.existing.mockResolvedValue(submission([{ id: "x", assessmentQuestionId: "aq1", answerPayload: { optionId: "o1" } }]));
+    const result = await submitAssessmentAttempt("attempt-1");
+    expect(result.status).toBe("GRADED");
     expect(mocks.assessment).not.toHaveBeenCalled();
   });
   it("locks before grading and rejects repeat submit", async () => {
