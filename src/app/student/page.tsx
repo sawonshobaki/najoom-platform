@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function StudentHomePage() {
   return (
     <main className="min-h-screen bg-[var(--najoom-bg)] px-4 py-8 sm:px-6">
@@ -15,6 +17,7 @@ export default function StudentHomePage() {
             هذه الصفحة مؤقتة لاختبار تسجيل الدخول وحماية المسارات.
             سنبني لوحة الطالبة الكاملة في مرحلتها المخصصة لاحقًا.
           </p>
+          <Link href="/student/assignments" className="mt-6 inline-flex min-h-12 items-center justify-center rounded-xl bg-[var(--najoom-navy)] px-5 py-3 text-sm font-semibold text-white">الواجبات</Link>
         </section>
       </div>
     </main>

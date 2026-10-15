@@ -369,6 +369,7 @@ model Lesson {
   learningObjectives LearningObjective[]
   questions          Question[]
   assessments        Assessment[]
+  assignments        Assignment[]
   resources          Resource[]
   lessonResources    LessonResource[]
 
@@ -663,12 +664,17 @@ model AssessmentAnswer {
 model Assignment {
   id     String @id @default(cuid())
   title  String
-  prompt String
+  prompt String?
+
+  lessonId    String?
+  description String?
+  externalUrl String?
+  weekNumber  Int?
 
   gradeId   String
   sectionId String?
 
-  maxScore Int
+  maxScore Int?
   dueAt    DateTime?
 
   status AssignmentStatus @default(DRAFT)
@@ -678,15 +684,19 @@ model Assignment {
   updatedAt   DateTime @updatedAt
 
   grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  lesson    Lesson?  @relation(fields: [lessonId], references: [id], onDelete: Restrict)
   section   Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   createdBy User     @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   submissions AssignmentSubmission[]
 
   @@index([gradeId])
+  @@index([lessonId])
   @@index([sectionId])
+  @@index([weekNumber])
   @@index([status])
   @@index([dueAt])
+  @@index([createdAt])
   @@map("assignments")
 }
 

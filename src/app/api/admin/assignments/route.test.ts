@@ -1,0 +1,22 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), list: vi.fn(), create: vi.fn(), get: vi.fn() }));
+vi.mock("@/lib/auth/authorization", () => ({ AuthenticationRequiredError: class AuthenticationRequiredError extends Error {}, AuthorizationDeniedError: class AuthorizationDeniedError extends Error {}, requireAdmin: mocks.auth }));
+vi.mock("@/lib/assignments/assignment-service", () => ({ AssignmentServiceError: class AssignmentServiceError extends Error { constructor(public code: string) { super(code); } }, listAssignments: mocks.list, createAssignment: mocks.create, getAssignment: mocks.get }));
+import { AuthenticationRequiredError, AuthorizationDeniedError } from "@/lib/auth/authorization";
+import { AssignmentServiceError } from "@/lib/assignments/assignment-service";
+import { validateExternalAssignmentCreate } from "@/lib/assignments/assignment-validation";
+import { GET, POST } from "./route";
+import { GET as detail } from "./[assignmentId]/route";
+const valid = { lessonId: "l1", title: "واجب", description: null, externalUrl: "https://example.edu/task", weekNumber: 1 };
+const post = (body: unknown = valid) => POST(new Request("http://localhost", { method: "POST", body: JSON.stringify(body) }));
+beforeEach(() => { vi.resetAllMocks(); mocks.auth.mockResolvedValue({ id: "admin" }); mocks.list.mockResolvedValue([]); mocks.create.mockResolvedValue({ id: "a1" }); mocks.get.mockResolvedValue({ id: "a1" }); });
+describe("admin assignment API", () => {
+  it.each([[new AuthenticationRequiredError(), 401], [new AuthorizationDeniedError(), 403]] as const)("protects GET and POST", async (error, status) => { mocks.auth.mockRejectedValue(error); expect((await GET()).status).toBe(status); expect((await post()).status).toBe(status); });
+  it("lists without caching", async () => { const response = await GET(); expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store"); expect(await response.json()).toEqual({ success: true, assignments: [] }); });
+  it("creates with 201", async () => { const response = await post(); expect(response.status).toBe(201); expect(mocks.create).toHaveBeenCalledWith(valid); });
+  it("rejects malformed JSON", async () => { const response = await POST(new Request("http://localhost", { method: "POST", body: "{" })); expect(response.status).toBe(400); expect(mocks.create).not.toHaveBeenCalled(); });
+  it.each([{ ...valid, externalUrl: "http://unsafe.example" }, { ...valid, weekNumber: 0 }, { ...valid, createdById: "forged" }])("returns 400 for invalid public body %#", async body => { mocks.create.mockImplementation(async value => validateExternalAssignmentCreate(value)); const response = await post(body); expect(response.status).toBe(400); });
+  it("maps a missing lesson", async () => { mocks.create.mockRejectedValue(new AssignmentServiceError("lesson_not_found")); expect((await post()).status).toBe(404); });
+  it("returns a protected detail", async () => { const response = await detail(new Request("http://localhost"), { params: Promise.resolve({ assignmentId: "a1" }) }); expect(response.status).toBe(200); expect(mocks.get).toHaveBeenCalledWith("a1"); });
+  it("does not leak unexpected errors", async () => { vi.spyOn(console, "error").mockImplementation(() => {}); mocks.create.mockRejectedValue(new Error("private SQL")); const response = await post(); expect(response.status).toBe(500); expect((await response.json()).message).not.toContain("SQL"); });
+});
