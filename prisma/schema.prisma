@@ -368,6 +368,7 @@ model Lesson {
   concepts           Concept[]
   learningObjectives LearningObjective[]
   questions          Question[]
+  assessments        Assessment[]
   resources          Resource[]
   lessonResources    LessonResource[]
 
@@ -563,6 +564,7 @@ model Assessment {
   status AssessmentStatus @default(DRAFT)
 
   gradeId   String
+  lessonId  String
   sectionId String?
 
   durationSeconds     Int
@@ -577,6 +579,7 @@ model Assessment {
   updatedAt   DateTime @updatedAt
 
   grade     Grade    @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Restrict)
   section   Section? @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   createdBy User     @relation("AssessmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
@@ -584,6 +587,7 @@ model Assessment {
   attempts  AssessmentAttempt[]
 
   @@index([gradeId])
+  @@index([lessonId])
   @@index([sectionId])
   @@index([status])
   @@index([startsAt])
