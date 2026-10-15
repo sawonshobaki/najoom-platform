@@ -24,7 +24,7 @@ describe("assignment reads", () => {
 });
 
 describe("student assignment archive", () => {
-  it("filters published external assignments by the student's current grade and section", async () => { mocks.list.mockResolvedValue([row()]); expect(await listStudentAssignments()).toHaveLength(1); expect(mocks.list.mock.calls[0][0].where).toMatchObject({ gradeId: "g6", status: "PUBLISHED", OR: [{ sectionId: null }, { sectionId: "sec1" }] }); });
+  it("filters published external assignments by the student's current grade and section", async () => { mocks.list.mockResolvedValue([{ ...row(), grades: [{ score: 1 }] }]); const result = await listStudentAssignments(); expect(result).toHaveLength(1); expect(result[0]).toMatchObject({ score: 1 }); expect(result[0]).not.toHaveProperty("grades"); expect(mocks.list.mock.calls[0][0].where).toMatchObject({ gradeId: "g6", status: "PUBLISHED", OR: [{ sectionId: null }, { sectionId: "sec1" }] }); });
   it("returns empty when the student has no current section", async () => { mocks.student.mockResolvedValue({ id: "st1", isActive: true, currentSectionId: null, currentSection: null }); expect(await listStudentAssignments()).toEqual([]); expect(mocks.list).not.toHaveBeenCalled(); });
   it("rejects an inactive or missing student profile", async () => { mocks.student.mockResolvedValue({ id: "st1", isActive: false }); await expect(listStudentAssignments()).rejects.toMatchObject({ code: "student_not_found" }); });
 });

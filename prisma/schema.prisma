@@ -257,6 +257,7 @@ model Student {
 
   assessmentAttempts    AssessmentAttempt[]
   assignmentSubmissions AssignmentSubmission[]
+  assignmentGrades      AssignmentGrade[]
 
   conceptMastery StudentConceptMastery[]
   errorPatterns  StudentErrorPattern[]
@@ -689,6 +690,7 @@ model Assignment {
   createdBy User     @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   submissions AssignmentSubmission[]
+  grades      AssignmentGrade[]
 
   @@index([gradeId])
   @@index([lessonId])
@@ -721,8 +723,10 @@ model AssignmentSubmission {
 }
 
 model AssignmentGrade {
-  id           String @id @default(cuid())
-  submissionId String @unique
+  id           String  @id @default(cuid())
+  submissionId String? @unique
+  assignmentId String?
+  studentId    String?
 
   score    Int
   feedback String?
@@ -730,9 +734,14 @@ model AssignmentGrade {
   gradedById String
   gradedAt   DateTime @default(now())
 
-  submission AssignmentSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  gradedBy   User                 @relation("AssignmentGradedBy", fields: [gradedById], references: [id], onDelete: Restrict)
+  submission AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  assignment Assignment?           @relation(fields: [assignmentId], references: [id], onDelete: Restrict)
+  student    Student?              @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  gradedBy   User                  @relation("AssignmentGradedBy", fields: [gradedById], references: [id], onDelete: Restrict)
 
+  @@unique([assignmentId, studentId])
+  @@index([assignmentId])
+  @@index([studentId])
   @@index([gradedById])
   @@map("assignment_grades")
 }

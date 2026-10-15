@@ -92,8 +92,14 @@ export async function listStudentAssignments() {
   const rows = await prisma.assignment.findMany({ where: {
     ...externalWhere, gradeId: student.currentSection.gradeId, status: "PUBLISHED",
     OR: [{ sectionId: null }, { sectionId: student.currentSectionId }],
-  }, select: assignmentSelect, orderBy: [{ weekNumber: "desc" }, { createdAt: "desc" }, { id: "desc" }] });
-  return rows.map(external);
+  }, select: {
+    ...assignmentSelect,
+    grades: { where: { studentId: student.id }, take: 1, select: { score: true } },
+  }, orderBy: [{ weekNumber: "desc" }, { createdAt: "desc" }, { id: "desc" }] });
+  return rows.map(({ grades, ...row }) => ({
+    ...external(row),
+    score: grades[0]?.score === 0 || grades[0]?.score === 1 ? grades[0].score as 0 | 1 : null,
+  }));
 }
 
 export type AssignmentCreationData = Awaited<ReturnType<typeof getAssignmentCreationData>>;
